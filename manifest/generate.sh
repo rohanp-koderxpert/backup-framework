@@ -98,11 +98,12 @@ collect_ports() {
 
 generate_manifest() {
     local server_name="${SERVER_NAME:?SERVER_NAME must be set}"
-    local generated_at os_json services_json ports_json packages_file
+    local generated_at os_json services_json ports_json docker_json packages_file
     generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     os_json="$(collect_os_info)"
     services_json="$(collect_services)"
     ports_json="$(collect_ports)"
+    docker_json="$(collect_docker)"
 
     packages_file="$(mktemp)"
     collect_packages > "$packages_file"
@@ -115,6 +116,7 @@ generate_manifest() {
         --argjson os "$os_json" \
         --argjson services "$services_json" \
         --argjson ports "$ports_json" \
+        --argjson docker "$docker_json" \
         --slurpfile packages "$packages_file" \
         '{
             schema_version: ($schema_version | tonumber),
@@ -124,8 +126,75 @@ generate_manifest() {
             os: $os,
             services: $services,
             ports: $ports,
+            docker: $docker,
             packages: $packages[0]
         }'
 
     rm -f "$packages_file"
+}
+
+collect_docker_containers() {
+    if ! command -v docker &>/dev/null; then
+        echo '[]'
+        return 0
+    fi
+
+    local ids=()
+    while IFS= read -r id; do
+        ids+=("$id")
+    done < <(docker ps -aq 2>/dev/null)
+
+    if [[ ${#ids[@]} -eq 0 ]]; then
+        echo '[]'
+        return 0
+    fi
+
+    docker inspect "${ids[@]}" 2>/dev/null | jq '
+        map({
+            names: (.Name | sub("^/"; "")),
+            image: .Config.Image,
+            status: .State.Status,
+            exit_code: .State.ExitCode,
+            restart_policy: .HostConfig.RestartPolicy.Name
+        })
+    '
+}
+
+collect_docker_images() {
+    if ! command -v docker &>/dev/null; then
+        echo '[]'
+        return 0
+    fi
+    docker images --format '{{json .}}' 2>/dev/null | jq -s 'map({repository: .Repository, tag: .Tag})'
+}
+
+collect_docker_volumes() {
+    if ! command -v docker &>/dev/null; then
+        echo '[]'
+        return 0
+    fi
+    docker volume ls --format '{{json .}}' 2>/dev/null | jq -s 'map({name: .Name})'
+}
+
+collect_docker_networks() {
+    if ! command -v docker &>/dev/null; then
+        echo '[]'
+        return 0
+    fi
+    docker network ls --format '{{json .}}' 2>/dev/null | jq -s 'map({name: .Name})'
+}
+
+collect_docker() {
+    local containers_json images_json volumes_json networks_json
+    containers_json="$(collect_docker_containers)"
+    images_json="$(collect_docker_images)"
+    volumes_json="$(collect_docker_volumes)"
+    networks_json="$(collect_docker_networks)"
+
+    jq -n \
+        --argjson containers "$containers_json" \
+        --argjson images "$images_json" \
+        --argjson volumes "$volumes_json" \
+        --argjson networks "$networks_json" \
+        '{containers: $containers, images: $images, volumes: $volumes, networks: $networks}'
 }
