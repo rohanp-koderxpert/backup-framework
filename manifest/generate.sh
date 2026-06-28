@@ -42,11 +42,47 @@ collect_packages() {
     '
 }
 
+collect_services() {
+    local running_json enabled_json failed_json
+
+    running_json="$(systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null \
+        | awk '{print $1"\t"$4}' \
+        | jq -R -s '
+            split("\n")
+            | map(select(length > 0))
+            | map(split("\t"))
+            | map({name: .[0], sub_state: .[1]})
+        ')"
+
+    enabled_json="$(systemctl list-unit-files --type=service --state=enabled --no-legend --plain 2>/dev/null \
+        | awk '{print $1}' \
+        | jq -R -s '
+            split("\n")
+            | map(select(length > 0))
+            | map({name: .})
+        ')"
+
+    failed_json="$(systemctl list-units --type=service --state=failed --no-legend --plain 2>/dev/null \
+        | awk '{print $1}' \
+        | jq -R -s '
+            split("\n")
+            | map(select(length > 0))
+            | map({name: .})
+        ')"
+
+    jq -n \
+        --argjson running "$running_json" \
+        --argjson enabled "$enabled_json" \
+        --argjson failed "$failed_json" \
+        '{running: $running, enabled: $enabled, failed: $failed}'
+}
+
 generate_manifest() {
     local server_name="${SERVER_NAME:?SERVER_NAME must be set}"
-    local generated_at os_json packages_file
+    local generated_at os_json services_json packages_file
     generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     os_json="$(collect_os_info)"
+    services_json="$(collect_services)"
 
     packages_file="$(mktemp)"
     collect_packages > "$packages_file"
@@ -57,6 +93,7 @@ generate_manifest() {
         --arg server_name "$server_name" \
         --arg framework_version "$FRAMEWORK_VERSION" \
         --argjson os "$os_json" \
+        --argjson services "$services_json" \
         --slurpfile packages "$packages_file" \
         '{
             schema_version: ($schema_version | tonumber),
@@ -64,8 +101,10 @@ generate_manifest() {
             server_name: $server_name,
             framework_version: $framework_version,
             os: $os,
+            services: $services,
             packages: $packages[0]
         }'
 
     rm -f "$packages_file"
 }
+
