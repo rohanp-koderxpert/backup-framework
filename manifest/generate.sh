@@ -77,12 +77,32 @@ collect_services() {
         '{running: $running, enabled: $enabled, failed: $failed}'
 }
 
+collect_ports() {
+    ss -tulnp 2>/dev/null | tail -n +2 | awk '{print $1"\t"$5"\t"$7}' | jq -R -s '
+        split("\n")
+        | map(select(length > 0))
+        | map(split("\t"))
+        | map({protocol: .[0], addr_port: .[1], raw_process: .[2]})
+        | map(
+            (try (.addr_port | capture("^(?<addr>.*):(?<port>[0-9]+)$"))
+             catch {addr: .addr_port, port: null}) as $ap
+            | {
+                protocol: .protocol,
+                address: $ap.addr,
+                port: (if $ap.port == null then null else ($ap.port | tonumber) end),
+                process: (try (.raw_process | capture("\"(?<name>[^\"]+)\"").name) catch null)
+              }
+          )
+    '
+}
+
 generate_manifest() {
     local server_name="${SERVER_NAME:?SERVER_NAME must be set}"
-    local generated_at os_json services_json packages_file
+    local generated_at os_json services_json ports_json packages_file
     generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     os_json="$(collect_os_info)"
     services_json="$(collect_services)"
+    ports_json="$(collect_ports)"
 
     packages_file="$(mktemp)"
     collect_packages > "$packages_file"
@@ -94,6 +114,7 @@ generate_manifest() {
         --arg framework_version "$FRAMEWORK_VERSION" \
         --argjson os "$os_json" \
         --argjson services "$services_json" \
+        --argjson ports "$ports_json" \
         --slurpfile packages "$packages_file" \
         '{
             schema_version: ($schema_version | tonumber),
@@ -102,9 +123,9 @@ generate_manifest() {
             framework_version: $framework_version,
             os: $os,
             services: $services,
+            ports: $ports,
             packages: $packages[0]
         }'
 
     rm -f "$packages_file"
 }
-
