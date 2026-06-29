@@ -98,13 +98,14 @@ collect_ports() {
 
 generate_manifest() {
     local server_name="${SERVER_NAME:?SERVER_NAME must be set}"
-    local generated_at os_json services_json ports_json docker_json databases_json packages_file
+    local generated_at os_json services_json ports_json docker_json databases_json filesystems_json packages_file
     generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     os_json="$(collect_os_info)"
     services_json="$(collect_services)"
     ports_json="$(collect_ports)"
     docker_json="$(collect_docker)"
     databases_json="$(collect_databases)"
+    filesystems_json="$(collect_filesystems)"
 
     packages_file="$(mktemp)"
     collect_packages > "$packages_file"
@@ -119,6 +120,7 @@ generate_manifest() {
         --argjson ports "$ports_json" \
         --argjson docker "$docker_json" \
         --argjson databases "$databases_json" \
+        --argjson filesystems "$filesystems_json" \
         --slurpfile packages "$packages_file" \
         '{
             schema_version: ($schema_version | tonumber),
@@ -130,6 +132,7 @@ generate_manifest() {
             ports: $ports,
             docker: $docker,
             databases: $databases,
+            filesystems: $filesystems,
             packages: $packages[0]
         }'
 
@@ -226,4 +229,20 @@ collect_databases() {
             mysql: {clusters: []}
         }
     '
+}
+
+collect_filesystems() {
+    local mounts_json fstab_json
+
+    mounts_json="$(findmnt -J --real -o SOURCE,TARGET,FSTYPE,OPTIONS 2>/dev/null | jq '
+        .filesystems
+        | map({device: .source, mountpoint: .target, fstype: .fstype, options: .options})
+    ')"
+    [[ -z "$mounts_json" || "$mounts_json" == "null" ]] && mounts_json='[]'
+
+    fstab_json="$(jq -Rs '.' /etc/fstab 2>/dev/null)"
+    [[ -z "$fstab_json" ]] && fstab_json='""'
+
+    jq -n --argjson mounts "$mounts_json" --argjson fstab_raw "$fstab_json" \
+        '{mounts: $mounts, fstab_raw: $fstab_raw}'
 }
