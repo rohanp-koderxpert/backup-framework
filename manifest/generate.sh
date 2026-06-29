@@ -98,7 +98,7 @@ collect_ports() {
 
 generate_manifest() {
     local server_name="${SERVER_NAME:?SERVER_NAME must be set}"
-    local generated_at os_json services_json ports_json docker_json databases_json filesystems_json cron_json packages_file
+    local generated_at os_json services_json ports_json docker_json databases_json filesystems_json cron_json security_json packages_file
     generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     os_json="$(collect_os_info)"
     services_json="$(collect_services)"
@@ -107,6 +107,7 @@ generate_manifest() {
     databases_json="$(collect_databases)"
     filesystems_json="$(collect_filesystems)"
     cron_json="$(collect_cron)"
+    security_json="$(collect_security)"
 
     packages_file="$(mktemp)"
     collect_packages > "$packages_file"
@@ -123,6 +124,7 @@ generate_manifest() {
         --argjson databases "$databases_json" \
         --argjson filesystems "$filesystems_json" \
         --argjson cron "$cron_json" \
+        --argjson security "$security_json" \
         --slurpfile packages "$packages_file" \
         '{
             schema_version: ($schema_version | tonumber),
@@ -136,6 +138,7 @@ generate_manifest() {
             databases: $databases,
             filesystems: $filesystems,
             cron: $cron,
+            security: $security,
             packages: $packages[0]
         }'
 
@@ -285,3 +288,49 @@ collect_cron() {
         '{system_raw: $system_raw, user_raw: $user_raw, systemd_timers: $systemd_timers}'
 }
 
+collect_security() {
+    local users_json sudoers_json keys_json
+
+    users_json="$(awk -F: '$3 >= 0 {print $1"\t"$3"\t"$7}' /etc/passwd | jq -R -s '
+        split("\n")
+        | map(select(length > 0))
+        | map(split("\t"))
+        | map({username: .[0], uid: (.[1] | tonumber), shell: .[2]})
+    ')"
+
+    sudoers_json="$(
+        { cat /etc/sudoers 2>/dev/null
+          for f in /etc/sudoers.d/*; do
+              [[ -f "$f" ]] || continue
+              echo "--- $f ---"
+              cat "$f"
+          done
+        } 2>/dev/null | jq -Rs '.'
+    )"
+    [[ -z "$sudoers_json" ]] && sudoers_json='""'
+
+    keys_json="$(
+        for home_dir in /root /home/*; do
+            [[ -d "$home_dir" ]] || continue
+            user="$(basename "$home_dir")"
+            keyfile="$home_dir/.ssh/authorized_keys"
+            if [[ -f "$keyfile" ]]; then
+                count=$(grep -cve '^\s*$' -e '^\s*#' "$keyfile" 2>/dev/null)
+                [[ -z "$count" ]] && count=0
+                printf '%s\t%s\n' "$user" "$count"
+            fi
+        done | jq -R -s '
+            split("\n")
+            | map(select(length > 0))
+            | map(split("\t"))
+            | map({(.[0]): (.[1] | tonumber)})
+            | add // {}
+        '
+    )"
+
+    jq -n \
+        --argjson users "$users_json" \
+        --argjson sudoers_raw "$sudoers_json" \
+        --argjson ssh_authorized_keys_count "$keys_json" \
+        '{users: $users, sudoers_raw: $sudoers_raw, ssh_authorized_keys_count: $ssh_authorized_keys_count}'
+}
