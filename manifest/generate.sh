@@ -98,7 +98,7 @@ collect_ports() {
 
 generate_manifest() {
     local server_name="${SERVER_NAME:?SERVER_NAME must be set}"
-    local generated_at os_json services_json ports_json docker_json databases_json filesystems_json cron_json security_json packages_file
+    local generated_at os_json services_json ports_json docker_json databases_json filesystems_json cron_json security_json tls_json packages_file
     generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     os_json="$(collect_os_info)"
     services_json="$(collect_services)"
@@ -108,6 +108,7 @@ generate_manifest() {
     filesystems_json="$(collect_filesystems)"
     cron_json="$(collect_cron)"
     security_json="$(collect_security)"
+    tls_json="$(collect_tls)"
 
     packages_file="$(mktemp)"
     collect_packages > "$packages_file"
@@ -125,6 +126,7 @@ generate_manifest() {
         --argjson filesystems "$filesystems_json" \
         --argjson cron "$cron_json" \
         --argjson security "$security_json" \
+        --argjson tls "$tls_json" \
         --slurpfile packages "$packages_file" \
         '{
             schema_version: ($schema_version | tonumber),
@@ -139,6 +141,7 @@ generate_manifest() {
             filesystems: $filesystems,
             cron: $cron,
             security: $security,
+            tls: $tls,
             packages: $packages[0]
         }'
 
@@ -334,3 +337,36 @@ collect_security() {
         --argjson ssh_authorized_keys_count "$keys_json" \
         '{users: $users, sudoers_raw: $sudoers_raw, ssh_authorized_keys_count: $ssh_authorized_keys_count}'
 }
+
+collect_tls() {
+    local certs_json="[]"
+    local cert_dir="/etc/letsencrypt/live"
+
+    if [[ -d "$cert_dir" ]]; then
+        certs_json="$(
+            for domain_dir in "$cert_dir"/*/; do
+                [[ -d "$domain_dir" ]] || continue
+                cert_path="${domain_dir}fullchain.pem"
+                [[ -f "$cert_path" ]] || continue
+
+                expiry_raw="$(openssl x509 -enddate -noout -in "$cert_path" 2>/dev/null | cut -d= -f2)"
+                [[ -z "$expiry_raw" ]] && continue
+
+                expires_at="$(date -u -d "$expiry_raw" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)"
+                [[ -z "$expires_at" ]] && expires_at="null"
+
+                domain="$(basename "$domain_dir")"
+                printf '%s\t%s\t%s\n' "$cert_path" "$domain" "$expires_at"
+            done | jq -R -s '
+                split("\n")
+                | map(select(length > 0))
+                | map(split("\t"))
+                | map({path: .[0], subject: .[1], expires_at: (if .[2] == "null" then null else .[2] end)})
+            '
+        )"
+        [[ -z "$certs_json" || "$certs_json" == "null" ]] && certs_json='[]'
+    fi
+
+    jq -n --argjson certificates "$certs_json" '{certificates: $certificates}'
+}
+
