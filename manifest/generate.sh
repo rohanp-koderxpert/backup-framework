@@ -98,12 +98,13 @@ collect_ports() {
 
 generate_manifest() {
     local server_name="${SERVER_NAME:?SERVER_NAME must be set}"
-    local generated_at os_json services_json ports_json docker_json packages_file
+    local generated_at os_json services_json ports_json docker_json databases_json packages_file
     generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     os_json="$(collect_os_info)"
     services_json="$(collect_services)"
     ports_json="$(collect_ports)"
     docker_json="$(collect_docker)"
+    databases_json="$(collect_databases)"
 
     packages_file="$(mktemp)"
     collect_packages > "$packages_file"
@@ -117,6 +118,7 @@ generate_manifest() {
         --argjson services "$services_json" \
         --argjson ports "$ports_json" \
         --argjson docker "$docker_json" \
+        --argjson databases "$databases_json" \
         --slurpfile packages "$packages_file" \
         '{
             schema_version: ($schema_version | tonumber),
@@ -127,6 +129,7 @@ generate_manifest() {
             services: $services,
             ports: $ports,
             docker: $docker,
+            databases: $databases,
             packages: $packages[0]
         }'
 
@@ -197,4 +200,30 @@ collect_docker() {
         --argjson volumes "$volumes_json" \
         --argjson networks "$networks_json" \
         '{containers: $containers, images: $images, volumes: $volumes, networks: $networks}'
+}
+
+collect_postgresql() {
+    if ! command -v pg_lsclusters &>/dev/null; then
+        echo '[]'
+        return 0
+    fi
+
+    pg_lsclusters 2>/dev/null | tail -n +2 | awk '{print $1"\t"$2"\t"$3"\t"$4}' | jq -R -s '
+        split("\n")
+        | map(select(length > 0))
+        | map(split("\t"))
+        | map({version: .[0], cluster: .[1], port: (.[2] | tonumber), status: .[3]})
+    '
+}
+
+collect_databases() {
+    local pg_json
+    pg_json="$(collect_postgresql)"
+
+    jq -n --argjson pg_clusters "$pg_json" '
+        {
+            postgresql: {clusters: $pg_clusters},
+            mysql: {clusters: []}
+        }
+    '
 }
