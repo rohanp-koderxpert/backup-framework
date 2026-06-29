@@ -98,7 +98,7 @@ collect_ports() {
 
 generate_manifest() {
     local server_name="${SERVER_NAME:?SERVER_NAME must be set}"
-    local generated_at os_json services_json ports_json docker_json databases_json filesystems_json packages_file
+    local generated_at os_json services_json ports_json docker_json databases_json filesystems_json cron_json packages_file
     generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     os_json="$(collect_os_info)"
     services_json="$(collect_services)"
@@ -106,6 +106,7 @@ generate_manifest() {
     docker_json="$(collect_docker)"
     databases_json="$(collect_databases)"
     filesystems_json="$(collect_filesystems)"
+    cron_json="$(collect_cron)"
 
     packages_file="$(mktemp)"
     collect_packages > "$packages_file"
@@ -121,6 +122,7 @@ generate_manifest() {
         --argjson docker "$docker_json" \
         --argjson databases "$databases_json" \
         --argjson filesystems "$filesystems_json" \
+        --argjson cron "$cron_json" \
         --slurpfile packages "$packages_file" \
         '{
             schema_version: ($schema_version | tonumber),
@@ -133,6 +135,7 @@ generate_manifest() {
             docker: $docker,
             databases: $databases,
             filesystems: $filesystems,
+            cron: $cron,
             packages: $packages[0]
         }'
 
@@ -246,3 +249,39 @@ collect_filesystems() {
     jq -n --argjson mounts "$mounts_json" --argjson fstab_raw "$fstab_json" \
         '{mounts: $mounts, fstab_raw: $fstab_raw}'
 }
+
+collect_cron() {
+    local system_json user_json timers_json
+
+    system_json="$(
+        { for f in /etc/crontab /etc/cron.d/*; do
+              [[ -f "$f" ]] || continue
+              echo "--- $f ---"
+              cat "$f"
+          done
+        } 2>/dev/null | jq -Rs '.'
+    )"
+    [[ -z "$system_json" ]] && system_json='""'
+
+    user_json="$(
+        for user in $(cut -d: -f1 /etc/passwd); do
+            crontab -u "$user" -l 2>/dev/null | sed "s/^/[$user] /"
+        done | jq -Rs '.'
+    )"
+    [[ -z "$user_json" ]] && user_json='""'
+
+    timers_json="$(systemctl list-timers --all --no-legend --plain 2>/dev/null \
+        | awk '{print $(NF-1)}' \
+        | jq -R -s '
+            split("\n")
+            | map(select(length > 0))
+            | map({name: .})
+        ')"
+
+    jq -n \
+        --argjson system_raw "$system_json" \
+        --argjson user_raw "$user_json" \
+        --argjson systemd_timers "$timers_json" \
+        '{system_raw: $system_raw, user_raw: $user_raw, systemd_timers: $systemd_timers}'
+}
+
