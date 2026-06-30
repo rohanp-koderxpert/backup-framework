@@ -52,3 +52,51 @@ check_existing_config() {
             ;;
     esac
 }
+
+prompt_with_default() {
+    local prompt_text="$1"
+    local default_value="$2"
+    local input
+    read -rp "$prompt_text [$default_value]: " input
+    echo "${input:-$default_value}"
+}
+
+collect_essentials() {
+    echo ""
+    echo "=== Essential configuration ==="
+
+    SERVER_NAME=""
+    while [[ -z "$SERVER_NAME" ]]; do
+        SERVER_NAME="$(prompt_with_default "Server name" "$(hostname)")"
+        if [[ -z "$SERVER_NAME" ]]; then
+            echo "Server name cannot be empty, please enter a value."
+        fi
+    done
+
+    echo ""
+    echo "Backup destination: only 'local' is implemented in this version."
+    echo "(sftp / s3 / rclone are reserved for a future release.)"
+    DEST_TYPE="local"
+    DEST_LOCAL_PATH="$(prompt_with_default "Local repository path" "/var/backups/backup-framework/repo")"
+
+    echo ""
+    RETENTION_DAILY="$(prompt_with_default "Days of daily backups to keep" "15")"
+
+    echo ""
+    SCHEDULE_TIME="$(prompt_with_default "Daily backup time (24h, HH:MM)" "02:00")"
+    SCHEDULE_JITTER_MINUTES="$(prompt_with_default "Random jitter in minutes" "30")"
+
+    echo ""
+    echo "Database dump mode: auto (recommended) / manual / disabled"
+    DB_MODE="$(prompt_with_default "Database mode" "auto")"
+
+    echo ""
+    echo "=== Summary ==="
+    echo "  Server name:       $SERVER_NAME"
+    echo "  Destination:       $DEST_TYPE -> $DEST_LOCAL_PATH"
+    echo "  Retention:         $RETENTION_DAILY days"
+    echo "  Schedule:          $SCHEDULE_TIME (+/- $SCHEDULE_JITTER_MINUTES min jitter)"
+    echo "  Database mode:     $DB_MODE"
+}
+
+
