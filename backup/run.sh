@@ -85,7 +85,35 @@ main() {
     fi
 
     echo "=== Manifest + database stage complete (db_dump_failed=$db_dump_failed) ==="
-    echo "=== (restic backup, retention come next) ==="
+
+    echo "Running restic backup..."
+    if ! restic backup "$BACKUP_SOURCE" \
+        --exclude-file="$EXCLUDE_FILE" \
+        --exclude-caches \
+        --compression "$BACKUP_COMPRESSION" \
+        --retry-lock "${LOCK_RETRY_SECONDS}s" \
+        --tag "${SERVER_NAME}-daily"; then
+        echo "FATAL: restic backup failed" >&2
+        exit 1
+    fi
+
+    if [[ "$VERIFY_BACKUP" == "true" ]]; then
+        echo "Verifying repository structure..."
+        if ! restic check; then
+            echo "WARNING: repository structural check failed after backup" >&2
+        fi
+    fi
+
+    if [[ "$RETENTION_ENABLED" == "true" ]]; then
+        echo "Applying retention policy: keep last $RETENTION_DAILY daily snapshots..."
+        if ! restic forget --keep-daily "$RETENTION_DAILY" --prune; then
+            echo "WARNING: retention/prune step failed" >&2
+        fi
+    else
+        echo "Retention disabled by config, skipping cleanup."
+    fi
+
+    echo "=== Backup run complete (db_dump_failed=$db_dump_failed) ==="
 }
 
 main "$@"
