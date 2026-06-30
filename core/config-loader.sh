@@ -50,7 +50,9 @@ load_config() {
         return 1
     fi
     # shellcheck disable=SC1090
+    set -a
     source "$path"
+    set +a
     check_config_version
     return 0
 }
