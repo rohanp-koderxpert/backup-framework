@@ -194,4 +194,63 @@ EOF
     fi
 }
 
+test_connectivity() {
+    echo ""
+    echo "=== Testing destination connectivity ==="
+
+    if ! load_config "$CONFIG_PATH"; then
+        echo "FATAL: could not reload generated config for testing" >&2
+        return 1
+    fi
+    if ! load_config "$SECRETS_FILE"; then
+        echo "FATAL: could not load secrets for testing" >&2
+        return 1
+    fi
+
+    case "$DEST_TYPE" in
+        local)
+            source "$FRAMEWORK_ROOT/destinations/local.sh"
+            ;;
+        *)
+            echo "FATAL: destination type '$DEST_TYPE' is not yet implemented" >&2
+            return 1
+            ;;
+    esac
+
+    if setup_destination; then
+        echo "Connectivity test PASSED. Repository is ready at $(repository_string)."
+        return 0
+    else
+        echo "Connectivity test FAILED. Review the error above before relying on this setup." >&2
+        return 1
+    fi
+}
+
+main() {
+    echo "=== Backup Framework Setup Wizard ==="
+
+    if ! check_existing_config; then
+        echo "Setup ended."
+        exit 0
+    fi
+
+    collect_essentials
+    generate_repository_password
+    write_config
+
+    if test_connectivity; then
+        echo ""
+        echo "=== Setup complete ==="
+        echo "Your daily backup is configured. To enable the scheduled timer, run:"
+        echo "  bash $FRAMEWORK_ROOT/setup/install-timer.sh"
+    else
+        echo ""
+        echo "=== Setup finished with errors ==="
+        echo "Configuration was written, but the connectivity test failed."
+        echo "Fix the issue above, then re-run this wizard or test manually before relying on it."
+        exit 1
+    fi
+}
+
+main "$@"
 
