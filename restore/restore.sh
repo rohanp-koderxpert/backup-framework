@@ -58,6 +58,9 @@ main() {
         local)
             source "$FRAMEWORK_ROOT/destinations/local.sh"
             ;;
+        sftp)
+            source "$FRAMEWORK_ROOT/destinations/sftp.sh"
+            ;;
         *)
             echo "FATAL: destination type '$DEST_TYPE' is not yet implemented" >&2
             exit 1
