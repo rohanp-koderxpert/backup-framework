@@ -99,4 +99,55 @@ collect_essentials() {
     echo "  Database mode:     $DB_MODE"
 }
 
+generate_repository_password() {
+    local secrets_dir="/etc/backup-framework"
+    local password_file="$secrets_dir/.restic-password"
+    local secrets_file="$secrets_dir/secrets.env"
+
+    mkdir -p "$secrets_dir"
+
+    if [[ -f "$password_file" ]]; then
+        echo ""
+        echo "A repository password file already exists at $password_file."
+        read -rp "Overwrite it with a newly generated password? This makes any existing backup using it unreadable unless you already have a copy saved elsewhere. [y/N]: " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            echo "Keeping existing password file."
+            return 0
+        fi
+    fi
+
+    openssl rand -base64 32 > "$password_file"
+    chmod 600 "$password_file"
+
+    cat > "$secrets_file" << EOF
+RESTIC_PASSWORD_FILE="$password_file"
+EOF
+    chmod 600 "$secrets_file"
+
+    local fingerprint
+    fingerprint="$(sha256sum "$password_file" | cut -c1-12)"
+
+    echo ""
+    echo "=== Repository password generated ==="
+    echo "A new, random repository password was generated and saved to:"
+    echo "  $password_file"
+    echo ""
+    echo "This password is NEVER shown on screen. Restic encrypts your"
+    echo "entire backup with it — if this file is lost AND you have no"
+    echo "other copy, the backup becomes permanently unreadable, even by you."
+    echo ""
+    echo "Fingerprint (for your records, NOT the password itself): $fingerprint"
+    echo ""
+    echo "Strongly recommended: copy this file to a separate, secure"
+    echo "location now (a password manager, encrypted note, etc.),"
+    echo "off this server."
+    echo ""
+    read -rp "Type CONFIRM once you have done this, or press Enter to continue without confirming: " ack
+    if [[ "$ack" == "CONFIRM" ]]; then
+        echo "Acknowledged."
+    else
+        echo "WARNING: proceeding without confirmed off-server backup of the password file."
+    fi
+}
+
 
