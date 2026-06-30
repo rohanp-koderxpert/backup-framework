@@ -150,4 +150,48 @@ EOF
     fi
 }
 
+write_config() {
+    local template="$FRAMEWORK_ROOT/templates/backup.conf.example"
+
+    if [[ ! -f "$template" ]]; then
+        echo "FATAL: template not found at $template" >&2
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$CONFIG_PATH")"
+
+    sed \
+        -e "s|^SERVER_NAME=.*|SERVER_NAME=\"$SERVER_NAME\"|" \
+        -e "s|^DEST_TYPE=.*|DEST_TYPE=\"$DEST_TYPE\"|" \
+        -e "s|^DEST_LOCAL_PATH=.*|DEST_LOCAL_PATH=\"$DEST_LOCAL_PATH\"|" \
+        -e "s|^RETENTION_DAILY=.*|RETENTION_DAILY=$RETENTION_DAILY|" \
+        -e "s|^SCHEDULE_TIME=.*|SCHEDULE_TIME=\"$SCHEDULE_TIME\"|" \
+        -e "s|^SCHEDULE_JITTER_MINUTES=.*|SCHEDULE_JITTER_MINUTES=$SCHEDULE_JITTER_MINUTES|" \
+        -e "s|^DB_MODE=.*|DB_MODE=\"$DB_MODE\"|" \
+        "$template" > "$CONFIG_PATH"
+
+    echo "Config written to $CONFIG_PATH"
+
+    if [[ ! -f "/etc/backup-framework/excludes.txt" ]]; then
+        cat > /etc/backup-framework/excludes.txt << 'EOF'
+/proc
+/sys
+/dev
+/run
+/tmp
+/var/tmp
+/mnt
+/media
+/lost+found
+/swapfile
+/var/backups/backup-framework/repo
+/var/lib/docker/overlay2
+/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+EOF
+        echo "Default exclude file written to /etc/backup-framework/excludes.txt"
+    else
+        echo "Exclude file already exists, leaving it untouched."
+    fi
+}
+
 
