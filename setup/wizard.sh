@@ -74,10 +74,41 @@ collect_essentials() {
     done
 
     echo ""
-    echo "Backup destination: only 'local' is implemented in this version."
-    echo "(sftp / s3 / rclone are reserved for a future release.)"
-    DEST_TYPE="local"
-    DEST_LOCAL_PATH="$(prompt_with_default "Local repository path" "/var/backups/backup-framework/repo")"
+    echo "Backup destination:"
+    echo "  1) local  — on this server's own disk (safe for testing, not for real DR)"
+    echo "  2) sftp   — another Linux server or Windows PC over SSH/Tailscale"
+    local dest_choice
+    dest_choice="$(prompt_with_default "Choose destination" "1")"
+
+    case "$dest_choice" in
+        2|sftp)
+            DEST_TYPE="sftp"
+            echo ""
+            echo "SFTP destination requires a Host alias in /root/.ssh/config with"
+            echo "key-based auth already configured (no password prompts — unattended backups"
+            echo "cannot accept interactive input)."
+            DEST_SFTP_HOST_ALIAS="$(prompt_with_default "SSH host alias" "himesh-backup")"
+            echo ""
+            echo "Use an ABSOLUTE path on the remote machine to avoid landing on an"
+            echo "unexpected or space-constrained drive. Examples:"
+            echo "  Linux server:  /mnt/backups/$(hostname)"
+            echo "  Windows PC:    /D:/backups/$(hostname)"
+            DEST_SFTP_REPO_PATH="$(prompt_with_default "Remote repository path" "/D:/backups/$(hostname)")"
+            echo ""
+            echo "NOTE: the first backup will transfer your full filesystem (~50GB+)."
+            echo "This may take 1-2 hours or more depending on your connection speed,"
+            echo "and may require multiple retries if the connection is unstable."
+            echo "Daily incremental backups after the first will be much smaller and faster."
+            ;;
+        *)
+            DEST_TYPE="local"
+            DEST_LOCAL_PATH="$(prompt_with_default "Local repository path" "/var/backups/backup-framework/repo")"
+            echo ""
+            echo "WARNING: local destination means your only backup lives on the same"
+            echo "server being backed up. If the server is destroyed, the backup is lost too."
+            echo "Consider adding a second destination (sftp/s3) once this is working."
+            ;;
+    esac
 
     echo ""
     RETENTION_DAILY="$(prompt_with_default "Days of daily backups to keep" "15")"
@@ -93,7 +124,11 @@ collect_essentials() {
     echo ""
     echo "=== Summary ==="
     echo "  Server name:       $SERVER_NAME"
-    echo "  Destination:       $DEST_TYPE -> $DEST_LOCAL_PATH"
+    if [[ "$DEST_TYPE" == "sftp" ]]; then
+        echo "  Destination:       $DEST_TYPE -> $DEST_SFTP_HOST_ALIAS:$DEST_SFTP_REPO_PATH"
+    else
+        echo "  Destination:       $DEST_TYPE -> $DEST_LOCAL_PATH"
+    fi
     echo "  Retention:         $RETENTION_DAILY days"
     echo "  Schedule:          $SCHEDULE_TIME (+/- $SCHEDULE_JITTER_MINUTES min jitter)"
     echo "  Database mode:     $DB_MODE"
@@ -164,6 +199,8 @@ write_config() {
         -e "s|^SERVER_NAME=.*|SERVER_NAME=\"$SERVER_NAME\"|" \
         -e "s|^DEST_TYPE=.*|DEST_TYPE=\"$DEST_TYPE\"|" \
         -e "s|^DEST_LOCAL_PATH=.*|DEST_LOCAL_PATH=\"$DEST_LOCAL_PATH\"|" \
+        -e "s|^DEST_SFTP_HOST_ALIAS=.*|DEST_SFTP_HOST_ALIAS=\"${DEST_SFTP_HOST_ALIAS:-himesh-backup}\"|" \
+        -e "s|^DEST_SFTP_REPO_PATH=.*|DEST_SFTP_REPO_PATH=\"${DEST_SFTP_REPO_PATH:-restic-repo}\"|" \
         -e "s|^RETENTION_DAILY=.*|RETENTION_DAILY=$RETENTION_DAILY|" \
         -e "s|^SCHEDULE_TIME=.*|SCHEDULE_TIME=\"$SCHEDULE_TIME\"|" \
         -e "s|^SCHEDULE_JITTER_MINUTES=.*|SCHEDULE_JITTER_MINUTES=$SCHEDULE_JITTER_MINUTES|" \
@@ -210,6 +247,9 @@ test_connectivity() {
     case "$DEST_TYPE" in
         local)
             source "$FRAMEWORK_ROOT/destinations/local.sh"
+            ;;
+	sftp)
+            source "$FRAMEWORK_ROOT/destinations/sftp.sh"
             ;;
         *)
             echo "FATAL: destination type '$DEST_TYPE' is not yet implemented" >&2
