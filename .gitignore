@@ -1,0 +1,12 @@
+# Secrets and local config - never commit these
+*.restic-password
+backup.conf
+.env
+
+# OS/editor noise
+.DS_Store
+*.swp
+
+# Test artifacts
+/tmp/
+*.log
