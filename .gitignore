@@ -1,6 +1,7 @@
 # Secrets and local config - never commit these
 *.restic-password
 backup.conf
+secrets.env
 .env
 
 # OS/editor noise
@@ -8,5 +9,4 @@ backup.conf
 *.swp
 
 # Test artifacts
-/tmp/
 *.log
