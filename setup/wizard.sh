@@ -10,9 +10,10 @@
 set -uo pipefail
 
 FRAMEWORK_ROOT="/opt/backup-framework"
-CONFIG_PATH="/etc/backup-framework/backup.conf"
+CONFIG_PATH="${CONFIG_PATH:-/etc/backup-framework/backup.conf}"
 
 source "$FRAMEWORK_ROOT/core/config-loader.sh"
+source "$FRAMEWORK_ROOT/setup/ssh-helper.sh"
 
 check_existing_config() {
     if [[ ! -f "$CONFIG_PATH" ]]; then
@@ -66,6 +67,9 @@ collect_essentials() {
     echo "=== Essential configuration ==="
 
     SERVER_NAME=""
+    DEST_LOCAL_PATH="/var/backups/backup-framework/repo"
+    DEST_SFTP_HOST_ALIAS=""
+    DEST_SFTP_REPO_PATH=""
     while [[ -z "$SERVER_NAME" ]]; do
         SERVER_NAME="$(prompt_with_default "Server name" "$(hostname)")"
         if [[ -z "$SERVER_NAME" ]]; then
@@ -88,6 +92,11 @@ collect_essentials() {
             echo "key-based auth already configured (no password prompts — unattended backups"
             echo "cannot accept interactive input)."
             DEST_SFTP_HOST_ALIAS="$(prompt_with_default "SSH host alias" "himesh-backup")"
+	    if ! ensure_ssh_ready "$DEST_SFTP_HOST_ALIAS"; then
+                echo "FATAL: SSH setup did not complete for '$DEST_SFTP_HOST_ALIAS'." >&2
+                echo "Re-run this wizard once connectivity is fixed." >&2
+                exit 1
+            fi
             echo ""
             echo "Use an ABSOLUTE path on the remote machine to avoid landing on an"
             echo "unexpected or space-constrained drive. Examples:"
