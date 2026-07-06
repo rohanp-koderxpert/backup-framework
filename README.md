@@ -83,6 +83,18 @@ rclone requires a one-time OAuth authentication with Google. This happens inside
 curl -fsSL https://raw.githubusercontent.com/rohanp-koderxpert/backup-framework/main/install.sh | sudo bash
 ```
 
+After installation completes, run the setup wizard:
+
+```bash
+sudo bash /opt/backup-framework/setup/wizard.sh
+```
+
+Then enable automated daily backups:
+
+```bash
+sudo bash /opt/backup-framework/setup/install-timer.sh
+```
+
 This will:
 1. Check you are running Ubuntu or Debian as root
 2. Verify internet connectivity

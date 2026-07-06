@@ -160,12 +160,29 @@ launch_wizard() {
     if [[ -f "$CONFIG_DIR/backup.conf" ]]; then
         log_warn "Existing configuration found at $CONFIG_DIR/backup.conf"
         log_warn "Skipping wizard — run it manually to reconfigure:"
-        log_warn "  bash $FRAMEWORK_DIR/setup/wizard.sh"
-    else
-        log_info "Launching setup wizard..."
         echo ""
-        bash "$FRAMEWORK_DIR/setup/wizard.sh"
+        echo "    sudo bash $FRAMEWORK_DIR/setup/wizard.sh"
+        echo ""
+        return 0
     fi
+
+    if [[ ! -t 0 ]]; then
+        log_warn "Running via pipe (curl | bash) — cannot launch interactive wizard."
+        echo ""
+        echo "  Installation is complete. Now run the setup wizard:"
+        echo ""
+        echo "    sudo bash $FRAMEWORK_DIR/setup/wizard.sh"
+        echo ""
+        echo "  Then enable automated backups:"
+        echo ""
+        echo "    sudo bash $FRAMEWORK_DIR/setup/install-timer.sh"
+        echo ""
+        return 0
+    fi
+
+    log_info "Launching setup wizard..."
+    echo ""
+    bash "$FRAMEWORK_DIR/setup/wizard.sh"
 }
 
 # --- Main ---
