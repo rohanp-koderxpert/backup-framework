@@ -92,7 +92,7 @@ collect_essentials() {
             echo "SFTP destination requires a Host alias in /root/.ssh/config with"
             echo "key-based auth already configured (no password prompts — unattended backups"
             echo "cannot accept interactive input)."
-            DEST_SFTP_HOST_ALIAS="$(prompt_with_default "SSH host alias" "himesh-backup")"
+	    DEST_SFTP_HOST_ALIAS="$(prompt_with_default "SSH host alias" "backup-destination")"
 	    if ! ensure_ssh_ready "$DEST_SFTP_HOST_ALIAS"; then
                 echo "FATAL: SSH setup did not complete for '$DEST_SFTP_HOST_ALIAS'." >&2
                 echo "Re-run this wizard once connectivity is fixed." >&2
@@ -103,7 +103,7 @@ collect_essentials() {
             echo "unexpected or space-constrained drive. Examples:"
             echo "  Linux server:  /mnt/backups/$(hostname)"
             echo "  Windows PC:    /D:/backups/$(hostname)"
-            DEST_SFTP_REPO_PATH="$(prompt_with_default "Remote repository path" "/D:/backups/$(hostname)")"
+            DEST_SFTP_REPO_PATH="$(prompt_with_default "Remote repository path" "/backups/$(hostname)")"
             echo ""
             echo "NOTE: the first backup will transfer your full filesystem (~50GB+)."
             echo "This may take 1-2 hours or more depending on your connection speed,"
