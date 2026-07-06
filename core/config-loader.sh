@@ -9,7 +9,7 @@
 
 set -uo pipefail
 
-CONFIG_PATH="${1:-/etc/backup-framework/backup.conf}"
+CONFIG_PATH="${CONFIG_PATH:-${1:-/etc/backup-framework/backup.conf}}"
 VALID_LINE_PATTERN='^[A-Z0-9_]+=.*$'
 EXPECTED_CONFIG_VERSION=1
 
