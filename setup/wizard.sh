@@ -79,8 +79,9 @@ collect_essentials() {
 
     echo ""
     echo "Backup destination:"
-    echo "  1) local  — on this server's own disk (safe for testing, not for real DR)"
+    echo "  1) local  — on this server's own disk"
     echo "  2) sftp   — another Linux server or Windows PC over SSH/Tailscale"
+    echo "  3) rclone — Google Drive, OneDrive, Dropbox, or any cloud storage"
     local dest_choice
     dest_choice="$(prompt_with_default "Choose destination" "1")"
 
@@ -109,6 +110,13 @@ collect_essentials() {
             echo "and may require multiple retries if the connection is unstable."
             echo "Daily incremental backups after the first will be much smaller and faster."
             ;;
+	3|rclone)
+            DEST_TYPE="rclone"
+            echo ""
+            echo "rclone remote name must already exist in 'rclone config'."
+            DEST_RCLONE_REMOTE_NAME="$(prompt_with_default "rclone remote name" "gdrive")"
+            DEST_RCLONE_REPO_PATH="$(prompt_with_default "Remote folder path" "backup-framework/$(hostname)")"
+            ;;
         *)
             DEST_TYPE="local"
             DEST_LOCAL_PATH="$(prompt_with_default "Local repository path" "/var/backups/backup-framework/repo")"
@@ -135,6 +143,8 @@ collect_essentials() {
     echo "  Server name:       $SERVER_NAME"
     if [[ "$DEST_TYPE" == "sftp" ]]; then
         echo "  Destination:       $DEST_TYPE -> $DEST_SFTP_HOST_ALIAS:$DEST_SFTP_REPO_PATH"
+    elif [[ "$DEST_TYPE" == "rclone" ]]; then
+        echo "  Destination:       $DEST_TYPE -> $DEST_RCLONE_REMOTE_NAME:$DEST_RCLONE_REPO_PATH"
     else
         echo "  Destination:       $DEST_TYPE -> $DEST_LOCAL_PATH"
     fi
@@ -214,6 +224,8 @@ write_config() {
         -e "s|^SCHEDULE_TIME=.*|SCHEDULE_TIME=\"$SCHEDULE_TIME\"|" \
         -e "s|^SCHEDULE_JITTER_MINUTES=.*|SCHEDULE_JITTER_MINUTES=$SCHEDULE_JITTER_MINUTES|" \
         -e "s|^DB_MODE=.*|DB_MODE=\"$DB_MODE\"|" \
+	-e "s|^DEST_RCLONE_REMOTE_NAME=.*|DEST_RCLONE_REMOTE_NAME=\"${DEST_RCLONE_REMOTE_NAME:-gdrive}\"|" \
+        -e "s|^DEST_RCLONE_REPO_PATH=.*|DEST_RCLONE_REPO_PATH=\"${DEST_RCLONE_REPO_PATH:-backup-framework}\"|" \
         "$template" > "$CONFIG_PATH"
 
     echo "Config written to $CONFIG_PATH"

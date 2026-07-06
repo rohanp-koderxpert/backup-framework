@@ -61,6 +61,9 @@ main() {
         sftp)
             source "$FRAMEWORK_ROOT/destinations/sftp.sh"
             ;;
+	rclone)
+            source "$FRAMEWORK_ROOT/destinations/rclone.sh"
+            ;;
         *)
             echo "FATAL: destination type '$DEST_TYPE' is not yet implemented" >&2
             exit 1
