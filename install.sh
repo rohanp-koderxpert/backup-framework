@@ -141,6 +141,11 @@ EOF
         log_info "Exclude file already exists, leaving it untouched."
     fi
 
+    if [[ ! -f /usr/local/bin/backup-framework ]]; then
+        ln -sf "$FRAMEWORK_DIR/bin/backup-framework" /usr/local/bin/backup-framework
+        log_info "Command 'backup-framework' available system-wide."
+    fi
+
     log_info "Runtime directories ready."
 }
 

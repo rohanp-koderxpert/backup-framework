@@ -1,0 +1,111 @@
+#!/bin/bash
+#
+# bin/backup-framework
+#
+# Main entry point for the backup framework.
+# Usage: backup-framework <command>
+#   status   — show current backup status and recent activity
+#   run      — run a backup immediately
+#   restore  — launch the restore wizard
+#   setup    — launch the setup wizard
+#   logs     — follow live backup logs
+#   snapshots — list available snapshots
+
+FRAMEWORK_ROOT="/opt/backup-framework"
+
+cmd="${1:-help}"
+
+case "$cmd" in
+    status)
+        echo "=== Backup Framework Status ==="
+        echo ""
+
+        if systemctl is-active --quiet backup-framework.service; then
+            echo "  Backup: RUNNING NOW"
+            echo ""
+            echo "  Recent activity:"
+            journalctl -u backup-framework.service --no-pager -n 10 \
+                | grep "bash\[" \
+                | awk '{$1=$2=$3=$4=$5=""; print "  "$0}' \
+                | sed 's/^ */  /'
+            echo ""
+            echo "  Run 'backup-framework logs' to follow live."
+        else
+            echo "  Backup: idle"
+            last_run=$(journalctl -u backup-framework.service --no-pager -n 50 \
+                | grep "Backup run complete\|FATAL" | tail -1)
+            if [[ -n "$last_run" ]]; then
+                echo "  Last run: $last_run"
+            fi
+        fi
+
+        echo ""
+        echo "  Timer:"
+   	 local timer_info
+   	 timer_info="$(systemctl list-timers backup-framework.timer --no-pager 2>/dev/null | grep backup-framework)"
+   	 if [[ -n "$timer_info" ]]; then
+      	 	local next_run
+    	 	next_run="$(echo "$timer_info" | awk '{print $1, $2, $3}')"
+         	local time_left
+         	time_left="$(echo "$timer_info" | awk '{print $4, $5}')"
+         	echo "    Next run:  $next_run"
+         	echo "    Time left: $time_left"
+    	else
+         	echo "    Timer not installed. Run: bash /opt/backup-framework/setup/install-timer.sh"
+    	fi
+
+        echo ""
+        if [[ -f /etc/backup-framework/backup.conf ]]; then
+            source /opt/backup-framework/core/config-loader.sh
+            load_config /etc/backup-framework/backup.conf 2>/dev/null
+            echo "  Server:      ${SERVER_NAME:-unknown}"
+            echo "  Destination: ${DEST_TYPE:-unknown}"
+            echo "  Retention:   ${RETENTION_DAILY:-15} days"
+        fi
+        ;;
+
+    logs)
+        echo "Following backup logs (Ctrl+C to stop)..."
+        echo ""
+        journalctl -u backup-framework.service -f
+        ;;
+
+    run)
+        echo "Starting backup now..."
+        systemctl start backup-framework.service
+        echo "Backup started. Run 'backup-framework logs' to follow progress."
+        ;;
+
+    snapshots)
+        source /opt/backup-framework/core/config-loader.sh
+        load_config /etc/backup-framework/backup.conf 2>/dev/null
+        load_config /etc/backup-framework/secrets.env 2>/dev/null
+        case "${DEST_TYPE:-local}" in
+            local)  source "$FRAMEWORK_ROOT/destinations/local.sh" ;;
+            sftp)   source "$FRAMEWORK_ROOT/destinations/sftp.sh" ;;
+            rclone) source "$FRAMEWORK_ROOT/destinations/rclone.sh" ;;
+        esac
+        export RESTIC_REPOSITORY="$(repository_string)"
+        restic snapshots
+        ;;
+
+    restore)
+        bash "$FRAMEWORK_ROOT/restore/wizard.sh"
+        ;;
+
+    setup)
+        bash "$FRAMEWORK_ROOT/setup/wizard.sh"
+        ;;
+
+    help|*)
+        echo "Usage: backup-framework <command>"
+        echo ""
+        echo "Commands:"
+        echo "  status     Show current backup status and next scheduled run"
+        echo "  logs       Follow live backup logs"
+        echo "  run        Start a backup immediately"
+        echo "  snapshots  List available snapshots"
+        echo "  restore    Launch the restore wizard"
+        echo "  setup      Launch the setup wizard"
+        ;;
+esac
