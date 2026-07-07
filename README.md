@@ -72,6 +72,8 @@ tailscale status
 ```
 You should see both your server and your PC listed, each with a `100.x.x.x` IP address.
 
+> **Note:** during the setup wizard, a `tailscale ping` reachability check may report failure on its very first attempt even when the connection is actually fine — this is a common cold-start artifact, not necessarily a real problem. If `tailscale status` (above) shows both machines connected, it's usually safe to proceed past this warning.
+
 **Step 3: Enable OpenSSH Server on your Windows PC**
 
 Open PowerShell as Administrator (right-click Start → "Terminal (Admin)") and run:
@@ -91,6 +93,16 @@ whoami
 This shows something like `himesh\rohan` — the part after the backslash (`rohan`) is your username.
 
 Your PC's Tailscale IP: look at the Tailscale tray icon, or run `tailscale status` on the server and find your PC's name and IP in the list.
+
+**Step 5: Check if your account is an Administrator (important)**
+
+```powershell
+net user <your-username>
+```
+Look at the `Local Group Memberships` line.
+
+- **If it includes `*Administrators`**, Windows OpenSSH will **ignore** the normal `C:\Users\<you>\.ssh\authorized_keys` file. You'll need to place the key in `C:\ProgramData\ssh\administrators_authorized_keys` instead, with permissions restricted to Administrators + SYSTEM. The setup wizard's on-screen instructions cover both cases — just make sure you use the **Administrator path** if this applies to you, or the connection will fail repeatedly with no clear error.
+- If your account is **not** an Administrator, the normal path works as shown and you can ignore this step.
 
 **That's all the manual preparation needed.** When you run the framework installer on the server and choose SFTP as your destination, the setup wizard will:
 - Detect that SSH key setup is needed
@@ -154,7 +166,7 @@ The wizard runs automatically after installation. It asks only the essential que
 
 1. **Server name** — a friendly label used in reports and snapshot tags
 2. **Backup destination** — local disk, SFTP (PC or server), or rclone (Google Drive etc.)
-3. **Connection details** — varies by destination type
+3. **Connection details** — varies by destination type. For SFTP, you'll first be asked whether the remote machine is Linux or Windows — this determines the default repository path format shown (`/mnt/backups/...` vs `/D:/backups/...`) and which file-placement instructions you'll see for the SSH key.
 4. **Retention policy** — how many daily backups to keep (default: 15)
 5. **Schedule** — what time to run nightly (default: 02:00)
 6. **Database mode** — auto (recommended), manual, or disabled
