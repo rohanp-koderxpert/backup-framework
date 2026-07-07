@@ -170,6 +170,7 @@ test_ssh_connection() {
 
 ensure_ssh_ready() {
     local alias_name="$1"
+    local os_hint="${2:-}"
 
     if ssh_alias_exists "$alias_name" && test_ssh_connection "$alias_name"; then
         echo "SSH alias '$alias_name' already configured and reachable. Skipping setup."
@@ -184,7 +185,11 @@ ensure_ssh_ready() {
     ensure_keypair || return 1
 
     local os_type remote_host remote_user
-    os_type="$(prompt_remote_os)"
+    if [[ -n "$os_hint" ]]; then
+        os_type="$os_hint"
+    else
+        os_type="$(prompt_remote_os)"
+    fi
     remote_host="$(prompt_with_default "Remote host/IP (e.g. Tailscale IP)" "")"
     if [[ -z "$remote_host" ]]; then
         echo "FATAL: remote host cannot be empty." >&2

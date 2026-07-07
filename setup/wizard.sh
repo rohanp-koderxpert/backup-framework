@@ -92,26 +92,46 @@ collect_essentials() {
             echo "SFTP destination requires a Host alias in /root/.ssh/config with"
             echo "key-based auth already configured (no password prompts — unattended backups"
             echo "cannot accept interactive input)."
-	    DEST_SFTP_HOST_ALIAS="$(prompt_with_default "SSH host alias" "backup-destination")"
-	    if ! ensure_ssh_ready "$DEST_SFTP_HOST_ALIAS"; then
+            DEST_SFTP_HOST_ALIAS="$(prompt_with_default "SSH host alias" "backup-destination")"
+
+            echo ""
+            echo "What type of machine is the backup destination?"
+            echo "  1) Linux server"
+            echo "  2) Windows PC"
+            local remote_os_choice
+            remote_os_choice="$(prompt_with_default "Remote machine type" "1")"
+            local remote_os="linux"
+            [[ "$remote_os_choice" == "2" ]] && remote_os="windows"
+
+            if ! ensure_ssh_ready "$DEST_SFTP_HOST_ALIAS" "$remote_os"; then
                 echo "FATAL: SSH setup did not complete for '$DEST_SFTP_HOST_ALIAS'." >&2
                 echo "Re-run this wizard once connectivity is fixed." >&2
                 exit 1
             fi
+
             echo ""
             echo "Use an ABSOLUTE path on the remote machine to avoid landing on an"
             echo "unexpected or space-constrained drive. Examples:"
             echo "  Linux server:  /mnt/backups/$(hostname)"
             echo "  Windows PC:    /D:/backups/$(hostname)"
-            DEST_SFTP_REPO_PATH="$(prompt_with_default "Remote repository path" "/backups/$(hostname)")"
-   	    if [[ "$DEST_SFTP_REPO_PATH" == *\\* ]]; then
-       		 echo ""
-       		 echo "WARNING: path contains backslashes. Use forward slashes instead."
-       		 echo "  Wrong:   D:\\backups\\server"
-       		 echo "  Correct: /D:/backups/server"
-       		 DEST_SFTP_REPO_PATH="${DEST_SFTP_REPO_PATH//\\//}"
-       		 echo "Auto-corrected to: $DEST_SFTP_REPO_PATH"
-   	    fi
+            echo ""
+
+            local default_sftp_path="/mnt/backups/$(hostname)"
+            [[ "$remote_os" == "windows" ]] && default_sftp_path="/D:/backups/$(hostname)"
+
+            while true; do
+                DEST_SFTP_REPO_PATH="$(prompt_with_default "Remote repository path" "$default_sftp_path")"
+                if [[ ${#DEST_SFTP_REPO_PATH} -lt 3 ]]; then
+                    echo "Path too short. Enter a valid absolute path (e.g. /D:/backups/server)."
+                    continue
+                fi
+                if [[ "$DEST_SFTP_REPO_PATH" == *\\* ]]; then
+                    DEST_SFTP_REPO_PATH="${DEST_SFTP_REPO_PATH//\\/\/}"
+                    echo "Auto-corrected to: $DEST_SFTP_REPO_PATH"
+                fi
+                break
+            done
+
             echo ""
             echo "NOTE: the first backup will transfer your full filesystem (~50GB+)."
             echo "This may take 1-2 hours or more depending on your connection speed,"
