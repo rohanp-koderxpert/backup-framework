@@ -104,6 +104,14 @@ collect_essentials() {
             echo "  Linux server:  /mnt/backups/$(hostname)"
             echo "  Windows PC:    /D:/backups/$(hostname)"
             DEST_SFTP_REPO_PATH="$(prompt_with_default "Remote repository path" "/backups/$(hostname)")"
+   	    if [[ "$DEST_SFTP_REPO_PATH" == *\\* ]]; then
+       		 echo ""
+       		 echo "WARNING: path contains backslashes. Use forward slashes instead."
+       		 echo "  Wrong:   D:\\backups\\server"
+       		 echo "  Correct: /D:/backups/server"
+       		 DEST_SFTP_REPO_PATH="${DEST_SFTP_REPO_PATH//\\//}"
+       		 echo "Auto-corrected to: $DEST_SFTP_REPO_PATH"
+   	    fi
             echo ""
             echo "NOTE: the first backup will transfer your full filesystem (~50GB+)."
             echo "This may take 1-2 hours or more depending on your connection speed,"
