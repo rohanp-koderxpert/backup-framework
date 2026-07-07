@@ -39,29 +39,65 @@ Before running the installer, the remote machine must have:
 - **Key-based SSH authentication** configured (password auth will not work for unattended nightly backups)
 - Network reachability from the server (direct, VPN, or Tailscale)
 
+## Before You Start
+
+If you plan to store backups on a **local PC over SFTP**, set up Tailscale and OpenSSH Server on your PC first (see the SFTP prerequisites section below). This takes about 5 minutes and only needs to be done once.
+
+If you plan to use **Google Drive**, you just need a Google account — rclone handles the rest during setup.
+
+If you plan to use **local disk only** (for testing), no prerequisites are needed.
+
 #### Setting up your local Windows PC as an SFTP destination
 
-1. **Install Tailscale on both machines** (recommended for secure, stable connectivity):
-   - Server: `curl -fsSL https://tailscale.com/install.sh | sh && tailscale up`
-   - Windows PC: download from https://tailscale.com/download/windows
-   - Sign in with the same account on both — they will appear in each other's Tailscale network
+A new user needs to complete these steps on their Windows PC **before** running the backup framework installer on the server. The framework's setup wizard will guide you through the remaining steps automatically.
 
-2. **Enable OpenSSH Server on Windows PC**:
-   Open PowerShell as Administrator and run:
-```powershell
-   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-   Start-Service sshd
-   Set-Service -Name sshd -StartupType 'Automatic'
-   New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
-```
+**Step 1: Install Tailscale on your Windows PC**
 
-3. **Verify connectivity** from the server:
+Download and install from: https://tailscale.com/download/windows
+
+After installing, sign in with a Google, Microsoft, or GitHub account. Tailscale will assign your PC a stable private IP address (shown in the Tailscale tray icon, looks like `100.x.x.x`).
+
+**Step 2: Install Tailscale on the server**
+
+SSH into your server and run:
 ```bash
-   ssh <your-windows-username>@<tailscale-ip-of-pc>
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up
 ```
-   You should get a Windows command prompt. Type `exit` to disconnect.
+Open the URL it shows in a browser, sign in with the **same Tailscale account** you used on your PC. Both machines will now appear in each other's Tailscale network.
 
-   > The setup wizard will guide you through SSH key generation and placement when you choose the SFTP destination. You do not need to set up keys manually before running the installer.
+Verify both machines are connected:
+```bash
+tailscale status
+```
+You should see both your server and your PC listed, each with a `100.x.x.x` IP address.
+
+**Step 3: Enable OpenSSH Server on your Windows PC**
+
+Open PowerShell as Administrator (right-click Start → "Terminal (Admin)") and run:
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Start-Service sshd
+Set-Service -Name sshd -StartupType 'Automatic'
+New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
+```
+
+**Step 4: Find your Windows username and Tailscale IP**
+
+Your Windows username:
+```powershell
+whoami
+```
+This shows something like `himesh\rohan` — the part after the backslash (`rohan`) is your username.
+
+Your PC's Tailscale IP: look at the Tailscale tray icon, or run `tailscale status` on the server and find your PC's name and IP in the list.
+
+**That's all the manual preparation needed.** When you run the framework installer on the server and choose SFTP as your destination, the setup wizard will:
+- Detect that SSH key setup is needed
+- Generate a keypair automatically
+- Show you the exact commands to run on your PC to authorize the key
+- Test the connection and retry if it fails
+- Configure everything automatically once the connection works
 
 #### Setting up another Linux server as an SFTP destination
 
