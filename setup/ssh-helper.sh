@@ -27,6 +27,32 @@ ssh_alias_exists() {
     [[ -f "$SSH_CONFIG" ]] && grep -qE "^Host[[:space:]]+${alias_name}\$" "$SSH_CONFIG"
 }
 
+get_ssh_config_field() {
+    local alias_name="$1" field="$2"
+    [[ -f "$SSH_CONFIG" ]] || return 0
+    awk -v alias="$alias_name" -v field="$field" '
+        /^Host[ \t]+/ {
+            if ($2 == alias) { in_block=1 } else { in_block=0 }
+            next
+        }
+        in_block && $1 == field { print $2; exit }
+    ' "$SSH_CONFIG"
+}
+
+remove_ssh_config_block() {
+    local alias_name="$1"
+    [[ -f "$SSH_CONFIG" ]] || return 0
+    awk -v alias="$alias_name" '
+        BEGIN { skip=0 }
+        /^Host[ \t]+/ {
+            if ($2 == alias) { skip=1; next }
+            else { skip=0 }
+        }
+        skip { next }
+        { print }
+    ' "$SSH_CONFIG" > "${SSH_CONFIG}.tmp" && mv "${SSH_CONFIG}.tmp" "$SSH_CONFIG"
+}
+
 ensure_keypair() {
     if [[ -f "$SSH_KEY_PATH" ]]; then
         echo "Existing SSH key found at $SSH_KEY_PATH, reusing it."
@@ -129,8 +155,34 @@ write_ssh_config_block() {
     local alias_name="$1" remote_host="$2" remote_user="$3"
 
     if ssh_alias_exists "$alias_name"; then
-        echo "Host alias '$alias_name' already present in $SSH_CONFIG, leaving it untouched."
-        return 0
+        local existing_host existing_user
+        existing_host="$(get_ssh_config_field "$alias_name" "HostName")"
+        existing_user="$(get_ssh_config_field "$alias_name" "User")"
+
+        if [[ "$existing_host" == "$remote_host" && "$existing_user" == "$remote_user" ]]; then
+            echo "Host alias '$alias_name' already present in $SSH_CONFIG with matching values, leaving it untouched."
+            return 0
+        fi
+
+        echo ""
+        echo "Host alias '$alias_name' already exists in $SSH_CONFIG with:"
+        echo "    HostName: $existing_host"
+        echo "    User:     $existing_user"
+        echo "You just entered:"
+        echo "    HostName: $remote_host"
+        echo "    User:     $remote_user"
+        local choice
+        choice="$(prompt_with_default "Update to the new values (u) or keep the existing configuration (k)?" "u")"
+        case "$choice" in
+            k|K|keep|Keep)
+                echo "Keeping existing configuration for '$alias_name' (HostName: $existing_host, User: $existing_user)."
+                return 0
+                ;;
+            *)
+                echo "Updating '$alias_name' with the new values."
+                remove_ssh_config_block "$alias_name"
+                ;;
+        esac
     fi
 
     mkdir -p /root/.ssh
