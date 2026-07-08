@@ -81,20 +81,30 @@ Windows (OpenSSH Server) setup:
      Start it: Start-Service sshd
      Autostart: Set-Service -Name sshd -StartupType 'Automatic'
 
-  2. Paste the public key above into:
-       C:\Users\<remote-username>\.ssh\authorized_keys
-     (create the .ssh folder and file if they don't exist)
+  2. FIRST check if your account is an Administrator (run in PowerShell):
+       net user <remote-username>
+     Look at "Local Group Memberships" for *Administrators.
 
-  3. IMPORTANT — Windows OpenSSH is strict about file permissions on
-     authorized_keys. If the file is inherited-readable by other accounts,
-     SSH will silently ignore it. From an elevated PowerShell:
+  3a. IF your account is NOT an Administrator, paste the public key above into:
+       C:\Users\<remote-username>\.ssh\authorized_keys
+     (create the .ssh folder and file if they don't exist), then lock down
+     permissions from an elevated PowerShell:
        icacls "C:\Users\<remote-username>\.ssh\authorized_keys" /inheritance:r
        icacls "C:\Users\<remote-username>\.ssh\authorized_keys" /grant "<remote-username>:F"
        icacls "C:\Users\<remote-username>\.ssh\authorized_keys" /grant "SYSTEM:F"
 
-  4. If <remote-username> is an Administrator account, Windows OpenSSH uses
-     a DIFFERENT file instead: C:\ProgramData\ssh\administrators_authorized_keys
-     (with the same permissions lockdown, restricted to Administrators + SYSTEM).
+  3b. IF your account IS an Administrator, Windows OpenSSH IGNORES the file
+     above entirely. Instead, paste the public key into:
+       C:\ProgramData\ssh\administrators_authorized_keys
+     (create the file if it doesn't exist), then lock down permissions from
+     an elevated PowerShell:
+       icacls "C:\ProgramData\ssh\administrators_authorized_keys" /inheritance:r
+       icacls "C:\ProgramData\ssh\administrators_authorized_keys" /grant "Administrators:F"
+       icacls "C:\ProgramData\ssh\administrators_authorized_keys" /grant "SYSTEM:F"
+
+  4. After placing the key and setting permissions, restart the SSH service
+     so it picks up the change (from an elevated PowerShell):
+       Restart-Service sshd
 EOF
     else
         cat <<'EOF'
