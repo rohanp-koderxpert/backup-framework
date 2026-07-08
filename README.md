@@ -10,6 +10,8 @@ A production-grade, config-driven backup and disaster recovery framework for Ubu
 - Generates a **structured JSON manifest** capturing installed packages, running services, ports, Docker containers, PostgreSQL clusters, cron jobs, SSL certificates, and more
 - Creates **verified PostgreSQL database dumps** alongside the filesystem backup
 - Stores backups at your chosen destination with **deduplication and compression** (only changed data is stored after the first backup)
+
+> **What you'll actually see at the destination:** restic stores backups as encrypted, deduplicated chunks — folders like `data`, `index`, `keys`, `snapshots`. You will **not** see readable copies of your original files sitting there, even after a successful backup. This is expected, not a sign of failure. To view or recover actual files, use the [restore process](#restore) below.
 - Runs **automatically every night** via a systemd timer
 - Provides a **single-command restore wizard** that restores and validates automatically
 
@@ -57,6 +59,8 @@ Download and install from: https://tailscale.com/download/windows
 
 After installing, sign in with a Google, Microsoft, or GitHub account. Tailscale will assign your PC a stable private IP address (shown in the Tailscale tray icon, looks like `100.x.x.x`).
 
+> **If the tray icon doesn't open a window when clicked:** the background service is likely still running fine — this is a known UI-only glitch. Open PowerShell and run `tailscale status`. If it prints a login link (`https://login.tailscale.com/a/...`), open that link in your browser to sign in instead.
+
 **Step 2: Install Tailscale on the server**
 
 SSH into your server and run:
@@ -66,11 +70,15 @@ tailscale up
 ```
 Open the URL it shows in a browser, sign in with the **same Tailscale account** you used on your PC. Both machines will now appear in each other's Tailscale network.
 
+> **If `tailscale up` fails with "tailscaled doesn't appear to be running":** run `sudo systemctl start tailscaled` followed by `sudo systemctl enable tailscaled` (so it survives reboots), then retry `tailscale up`. Check `sudo systemctl status tailscaled` for further errors if it still fails.
+
 Verify both machines are connected:
 ```bash
 tailscale status
 ```
 You should see both your server and your PC listed, each with a `100.x.x.x` IP address.
+
+> **If you ever need to fully reset Tailscale on a machine** (e.g., reinstalling after wiping its local state), also remove the old device entry from the [Tailscale admin console](https://login.tailscale.com/admin/machines) — otherwise reinstalling can register as a brand-new device rather than reconnecting the original one, leaving stale duplicates.
 
 > **Note:** during the setup wizard, a `tailscale ping` reachability check may report failure on its very first attempt even when the connection is actually fine — this is a common cold-start artifact, not necessarily a real problem. If `tailscale status` (above) shows both machines connected, it's usually safe to proceed past this warning.
 
@@ -150,7 +158,8 @@ This will:
 4. Clone this repository to `/opt/backup-framework`
 5. Create runtime directories (`/etc/backup-framework`, `/var/backups/backup-framework`, `/var/log/backup-framework`)
 6. Create a default exclude file at `/etc/backup-framework/excludes.txt`
-7. Launch the interactive setup wizard automatically
+
+> **Note:** when installed via the one-line `curl | sudo bash` command above, the wizard **cannot** launch automatically — piping into `bash` disables interactive input. The installer will detect this and print the exact command to run next (shown below). Auto-launch only happens if you clone the repo manually and run `sudo bash install.sh` directly in a real terminal session.
 
 ### Manual install (if you have already cloned the repo)
 
@@ -167,12 +176,14 @@ The wizard runs automatically after installation. It asks only the essential que
 1. **Server name** — a friendly label used in reports and snapshot tags
 2. **Backup destination** — local disk, SFTP (PC or server), or rclone (Google Drive etc.)
 3. **Connection details** — varies by destination type. For SFTP, you'll first be asked whether the remote machine is Linux or Windows — this determines the default repository path format shown (`/mnt/backups/...` vs `/D:/backups/...`) and which file-placement instructions you'll see for the SSH key.
+
+   > If the wizard shows `WARNING: Tailscale ping ... failed` at this point, this is often a harmless cold-start artifact rather than a real problem — proceed with placing the key as instructed, and the actual connection test afterward will confirm either way.
 4. **Retention policy** — how many daily backups to keep (default: 15)
 5. **Schedule** — what time to run nightly (default: 02:00)
 6. **Database mode** — auto (recommended), manual, or disabled
 
 After the wizard completes, it:
-- Generates a strong random repository password and saves it to `/etc/backup-framework/.restic-password`
+- Generates a strong random repository password and saves it to `/etc/backup-framework/.restic-password`. **The wizard will pause and explicitly ask you to confirm you've copied this password somewhere safe off-server before continuing** — take this seriously; pressing Enter to skip past it without actually saving a copy means that if this file is ever lost, your backups become permanently unrecoverable.
 - Writes your configuration to `/etc/backup-framework/backup.conf`
 - Tests connectivity to the chosen destination
 - Initializes the restic repository
@@ -224,6 +235,10 @@ This will:
 4. Check available disk space before starting
 5. Run the restore
 6. Automatically validate the restored data against the original manifest
+
+### Restoring to a different (new) server
+
+If you're restoring after total server loss — provisioning a fresh server and restoring onto it — be aware the framework currently restores **files as they were**, including any references to the original server's IP address (in application configs, Docker environment files, systemd units, etc.). If your new server has a different IP, you may need to manually update these references after restore. **Database-stored values** (e.g., Odoo's `ir.config_parameter` base URL) are not touched by filesystem restore at all and may need manual correction inside the application itself. Automatic IP migration is being considered as a future enhancement but is not currently implemented.
 
 ### Post-restore validation only
 
