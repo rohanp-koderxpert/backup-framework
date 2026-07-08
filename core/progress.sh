@@ -42,7 +42,17 @@ render_backup_progress() {
             local speed_mb eta_str
             if [[ "$elapsed" -gt 0 && "$bytes_done" -gt 0 ]]; then
                 speed_mb="$(awk -v b="$bytes_done" -v s="$elapsed" 'BEGIN{printf "%.1f", (b/s)/1024/1024}')"
-                if (( $(awk -v b="$bytes_done" 'BEGIN{print (b>0)}') )); then
+
+                # Suppress ETA until we have a reliable sample: at least 10s
+                # elapsed AND at least 1% of total data transferred. Early
+                # estimates from a tiny sample swing wildly (e.g. 500h down
+                # to 3h within a minute) and just alarm the user for no reason.
+                local min_bytes_threshold
+                min_bytes_threshold="$(awk -v t="$total_bytes" 'BEGIN{printf "%d", t*0.01}')"
+
+                if [[ "$elapsed" -lt 10 ]] || [[ "$bytes_done" -lt "$min_bytes_threshold" ]]; then
+                    eta_str="calculating..."
+                else
                     eta_str="$(awk -v b="$bytes_done" -v t="$total_bytes" -v s="$elapsed" '
                         BEGIN {
                             if (b <= 0) { print "?"; exit }
@@ -55,12 +65,10 @@ render_backup_progress() {
                             else if (m < 60) { printf "%dm", m }
                             else { printf "%dh%dm", int(m/60), m%60 }
                         }')"
-                else
-                    eta_str="?"
                 fi
             else
                 speed_mb="0.0"
-                eta_str="?"
+                eta_str="calculating..."
             fi
 
             local done_gb total_gb

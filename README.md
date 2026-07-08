@@ -311,6 +311,8 @@ The full annotated configuration template is at `templates/backup.conf.example`.
 
 ## Troubleshooting
 
+> **Note:** the examples below use a local repository path for simplicity. Replace `RESTIC_REPOSITORY` with your actual destination — check `DEST_TYPE` and the matching path in `/etc/backup-framework/backup.conf`. For SFTP setups this looks like `sftp:your-alias:/your/path` rather than a local filesystem path; for `rclone` it looks like `rclone:your-remote:/your/folder`.
+
 **Backup failed — check logs:**
 ```bash
 journalctl -u backup-framework.service --no-pager -n 50
