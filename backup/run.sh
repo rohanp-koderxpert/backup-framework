@@ -16,6 +16,7 @@ source "$FRAMEWORK_ROOT/core/lock.sh"
 source "$FRAMEWORK_ROOT/manifest/generate.sh"
 source "$FRAMEWORK_ROOT/database/postgresql.sh"
 source "$FRAMEWORK_ROOT/core/progress.sh"
+source "$FRAMEWORK_ROOT/core/retry.sh"
 
 cleanup() {
     release_lock
@@ -93,15 +94,7 @@ main() {
 
     echo "=== Manifest + database stage complete (db_dump_failed=$db_dump_failed) ==="
 
-    echo "Running restic backup..."
-    if ! restic backup "$BACKUP_SOURCE" \
-        --exclude-file="$EXCLUDE_FILE" \
-        --exclude-caches \
-        --compression "$BACKUP_COMPRESSION" \
-        --retry-lock "${LOCK_RETRY_SECONDS}s" \
-        --tag "${SERVER_NAME}-daily" \
-        --json \
-        | render_backup_progress; then
+    if ! run_restic_backup_with_retry; then
         echo "FATAL: restic backup failed" >&2
         exit 1
     fi
