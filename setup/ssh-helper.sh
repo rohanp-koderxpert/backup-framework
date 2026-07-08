@@ -197,6 +197,8 @@ write_ssh_config_block() {
         echo "    IdentityFile $SSH_KEY_PATH"
         echo "    IdentitiesOnly yes"
         echo "    StrictHostKeyChecking accept-new"
+        echo "    ServerAliveInterval 15"
+        echo "    ServerAliveCountMax 3"
     } >> "$SSH_CONFIG"
 
     echo "Added Host block for '$alias_name' to $SSH_CONFIG."
