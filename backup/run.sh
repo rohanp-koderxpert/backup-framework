@@ -15,6 +15,7 @@ source "$FRAMEWORK_ROOT/core/config-loader.sh"
 source "$FRAMEWORK_ROOT/core/lock.sh"
 source "$FRAMEWORK_ROOT/manifest/generate.sh"
 source "$FRAMEWORK_ROOT/database/postgresql.sh"
+source "$FRAMEWORK_ROOT/core/progress.sh"
 
 cleanup() {
     release_lock
@@ -98,7 +99,9 @@ main() {
         --exclude-caches \
         --compression "$BACKUP_COMPRESSION" \
         --retry-lock "${LOCK_RETRY_SECONDS}s" \
-        --tag "${SERVER_NAME}-daily"; then
+        --tag "${SERVER_NAME}-daily" \
+        --json \
+        | render_backup_progress; then
         echo "FATAL: restic backup failed" >&2
         exit 1
     fi
