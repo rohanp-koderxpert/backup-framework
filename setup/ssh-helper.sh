@@ -53,6 +53,60 @@ remove_ssh_config_block() {
     ' "$SSH_CONFIG" > "${SSH_CONFIG}.tmp" && mv "${SSH_CONFIG}.tmp" "$SSH_CONFIG"
 }
 
+# Single source of truth for what a Host block should contain. Used both
+# when writing a new/updated block and when checking an existing block
+# for staleness (e.g. missing fields added by a later framework update).
+# Forward-compatible: add a new field here once, and both write and
+# staleness-check paths automatically respect it - no other code needs
+# to change when new recommended SSH settings are introduced later.
+generate_host_block_fields() {
+    local remote_host="$1" remote_user="$2"
+    cat <<EOF
+    HostName $remote_host
+    User $remote_user
+    IdentityFile $SSH_KEY_PATH
+    IdentitiesOnly yes
+    StrictHostKeyChecking accept-new
+    ServerAliveInterval 15
+    ServerAliveCountMax 3
+EOF
+}
+
+get_ssh_config_raw_block() {
+    local alias_name="$1"
+    [[ -f "$SSH_CONFIG" ]] || return 0
+    awk -v alias="$alias_name" '
+        /^Host[ \t]+/ {
+            if ($2 == alias) { in_block=1; next } else { in_block=0 }
+        }
+        in_block { print }
+    ' "$SSH_CONFIG"
+}
+
+ssh_config_is_up_to_date() {
+    local alias_name="$1"
+    local existing_host existing_user
+    existing_host="$(get_ssh_config_field "$alias_name" "HostName")"
+    existing_user="$(get_ssh_config_field "$alias_name" "User")"
+
+    local expected actual
+    expected="$(generate_host_block_fields "$existing_host" "$existing_user")"
+    actual="$(get_ssh_config_raw_block "$alias_name")"
+
+    local line key value actual_value
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        key="$(awk '{print $1}' <<<"$line")"
+        value="$(awk '{$1=""; print $0}' <<<"$line" | sed 's/^[[:space:]]*//')"
+        actual_value="$(awk -v k="$key" '$1==k {$1=""; print $0}' <<<"$actual" | sed 's/^[[:space:]]*//')"
+        if [[ "$actual_value" != "$value" ]]; then
+            return 1
+        fi
+    done <<< "$expected"
+
+    return 0
+}
+
 ensure_keypair() {
     if [[ -f "$SSH_KEY_PATH" ]]; then
         echo "Existing SSH key found at $SSH_KEY_PATH, reusing it."
@@ -159,8 +213,8 @@ write_ssh_config_block() {
         existing_host="$(get_ssh_config_field "$alias_name" "HostName")"
         existing_user="$(get_ssh_config_field "$alias_name" "User")"
 
-        if [[ "$existing_host" == "$remote_host" && "$existing_user" == "$remote_user" ]]; then
-            echo "Host alias '$alias_name' already present in $SSH_CONFIG with matching values, leaving it untouched."
+        if [[ "$existing_host" == "$remote_host" && "$existing_user" == "$remote_user" ]] && ssh_config_is_up_to_date "$alias_name"; then
+            echo "Host alias '$alias_name' already present in $SSH_CONFIG with matching, up-to-date values, leaving it untouched."
             return 0
         fi
 
@@ -192,13 +246,7 @@ write_ssh_config_block() {
     {
         echo ""
         echo "Host $alias_name"
-        echo "    HostName $remote_host"
-        echo "    User $remote_user"
-        echo "    IdentityFile $SSH_KEY_PATH"
-        echo "    IdentitiesOnly yes"
-        echo "    StrictHostKeyChecking accept-new"
-        echo "    ServerAliveInterval 15"
-        echo "    ServerAliveCountMax 3"
+        generate_host_block_fields "$remote_host" "$remote_user"
     } >> "$SSH_CONFIG"
 
     echo "Added Host block for '$alias_name' to $SSH_CONFIG."
@@ -237,8 +285,37 @@ ensure_ssh_ready() {
     local os_hint="${2:-}"
 
     if ssh_alias_exists "$alias_name" && test_ssh_connection "$alias_name"; then
-        echo "SSH alias '$alias_name' already configured and reachable. Skipping setup."
-        return 0
+        if ssh_config_is_up_to_date "$alias_name"; then
+            echo "SSH alias '$alias_name' already configured and reachable. Skipping setup."
+            return 0
+        fi
+
+        echo ""
+        echo "SSH alias '$alias_name' is reachable, but its configuration is missing"
+        echo "recommended settings introduced in a recent update (e.g. SSH keepalive"
+        echo "settings that help detect silent connection loss)."
+        local update_choice
+        update_choice="$(prompt_with_default "Update it now to add these settings? (y/n)" "y")"
+        case "$update_choice" in
+            n|N|no|No)
+                echo "Keeping existing configuration for '$alias_name' as-is."
+                return 0
+                ;;
+            *)
+                local existing_host existing_user
+                existing_host="$(get_ssh_config_field "$alias_name" "HostName")"
+                existing_user="$(get_ssh_config_field "$alias_name" "User")"
+                echo "Updating '$alias_name' with the latest recommended settings..."
+                remove_ssh_config_block "$alias_name"
+                {
+                    echo ""
+                    echo "Host $alias_name"
+                    generate_host_block_fields "$existing_host" "$existing_user"
+                } >> "$SSH_CONFIG"
+                echo "Updated Host block for '$alias_name'."
+                return 0
+                ;;
+        esac
     fi
 
     echo ""
