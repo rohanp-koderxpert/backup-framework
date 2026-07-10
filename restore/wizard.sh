@@ -88,34 +88,63 @@ main() {
     echo "=== Running restore validation ==="
 
     local original_manifest="$target/var/backups/backup-framework/manifest/manifest.json"
+    local validation_status="SKIPPED"
+    local skip_reason=""
 
     if [[ ! -f "$original_manifest" ]]; then
-        echo "WARNING: no manifest found inside restored snapshot at:"
-        echo "  $original_manifest"
-        echo "Skipping validation. This snapshot may predate manifest generation."
-        exit 0
+        skip_reason="no manifest found in this snapshot"
+    elif ! jq empty "$original_manifest" 2>/dev/null; then
+        skip_reason="manifest file exists but is corrupted/unreadable (invalid JSON)"
     fi
 
-    source "$FRAMEWORK_ROOT/manifest/generate.sh"
-    export SERVER_NAME="${SERVER_NAME:-$(hostname)}"
-
-    local current_manifest
-    current_manifest="/tmp/current-manifest-$(date +%Y%m%d%H%M%S).json"
-    echo "Generating fresh manifest from current system..."
-    generate_manifest > "$current_manifest"
-
-    source "$FRAMEWORK_ROOT/restore/validate.sh"
-    if validate_restore "$original_manifest" "$current_manifest"; then
+    if [[ -n "$skip_reason" ]]; then
+        echo "WARNING: cannot validate this restore - $skip_reason."
+        echo "  Expected manifest at: $original_manifest"
         echo ""
-        echo "=== Restore complete and validated ==="
-        echo "All checks passed."
+        echo "This can happen for a snapshot from an older framework version,"
+        echo "one taken with MANIFEST_ENABLED=false, or a backup not produced by"
+        echo "this framework's normal backup process. The restored files above"
+        echo "are still on disk at $target - only automatic validation was skipped."
+
+        if [[ -t 0 ]]; then
+            echo ""
+            read -rp "Press Enter to acknowledge validation was skipped and continue..." _
+        else
+            echo "(running non-interactively - proceeding without prompting)"
+        fi
     else
-        echo ""
-        echo "=== Restore complete with validation issues ==="
-        echo "Review the failures above before putting this server into service."
+        source "$FRAMEWORK_ROOT/manifest/generate.sh"
+        export SERVER_NAME="${SERVER_NAME:-$(hostname)}"
+
+        local current_manifest
+        current_manifest="/tmp/current-manifest-$(date +%Y%m%d%H%M%S).json"
+        echo "Generating fresh manifest from current system..."
+        generate_manifest > "$current_manifest"
+
+        source "$FRAMEWORK_ROOT/restore/validate.sh"
+        if validate_restore "$original_manifest" "$current_manifest"; then
+            validation_status="PASSED"
+        else
+            validation_status="FAILED"
+        fi
+
+        rm -f "$current_manifest"
     fi
 
-    rm -f "$current_manifest"
+    echo ""
+    echo "=== Restore Summary ==="
+    echo "Files restored: Yes ($snapshot_id -> $target)"
+    case "$validation_status" in
+        PASSED)
+            echo "Validation:     PASSED - all checks OK"
+            ;;
+        FAILED)
+            echo "Validation:     FAILED - review the failures above before putting this server into service"
+            ;;
+        SKIPPED)
+            echo "Validation:     SKIPPED ($skip_reason)"
+            ;;
+    esac
 }
 
 main "$@"

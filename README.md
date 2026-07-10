@@ -234,7 +234,9 @@ This will:
 3. Ask where to restore it (defaults to a timestamped directory in `/tmp`)
 4. Check available disk space before starting
 5. Run the restore
-6. Automatically validate the restored data against the original manifest
+6. Automatically validate the restored data against the original manifest, **if one is present in the restored snapshot**
+
+> **Note:** validation requires a manifest file inside the snapshot being restored. This may be **skipped** (files are still restored successfully either way) if: the snapshot predates manifest generation being added, it was taken with `MANIFEST_ENABLED=false`, or the manifest itself is corrupted. The wizard's final summary always reports restore status and validation status **separately** — a restore can succeed with validation skipped or failed, so check both lines, not just the top-level success message.
 
 ### Restoring to a different (new) server
 
