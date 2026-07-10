@@ -96,9 +96,36 @@ collect_ports() {
     '
 }
 
+# --- shared IP detection --------------------------------------------------
+#
+# Single source of truth for detecting this server's network interfaces
+# and their IPv4 addresses. Used both here (captured into the manifest
+# at backup time) and by restore/wizard.sh (compared against at restore
+# time, for IP-migration detection) - keeping both call sites
+# automatically in sync, same pattern as F17's shared SSH config fields.
+#
+# Outputs one "interface:ip" pair per line, skips loopback.
+detect_labeled_ips() {
+    ip -4 -o addr show 2>/dev/null | awk '
+        $2 != "lo" {
+            split($4, a, "/")
+            print $2 ":" a[1]
+        }
+    '
+}
+
+collect_network_interfaces() {
+    detect_labeled_ips | jq -R -s '
+        split("\n")
+        | map(select(length > 0))
+        | map(split(":"))
+        | map({interface: .[0], ip: .[1]})
+    '
+}
+
 generate_manifest() {
     local server_name="${SERVER_NAME:?SERVER_NAME must be set}"
-    local generated_at os_json services_json ports_json docker_json databases_json filesystems_json cron_json security_json tls_json packages_file
+    local generated_at os_json services_json ports_json docker_json databases_json filesystems_json cron_json security_json tls_json network_json packages_file
     generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     os_json="$(collect_os_info)"
     services_json="$(collect_services)"
@@ -109,6 +136,7 @@ generate_manifest() {
     cron_json="$(collect_cron)"
     security_json="$(collect_security)"
     tls_json="$(collect_tls)"
+    network_json="$(collect_network_interfaces)"
 
     packages_file="$(mktemp)"
     collect_packages > "$packages_file"
@@ -127,6 +155,7 @@ generate_manifest() {
         --argjson cron "$cron_json" \
         --argjson security "$security_json" \
         --argjson tls "$tls_json" \
+        --argjson network "$network_json" \
         --slurpfile packages "$packages_file" \
         '{
             schema_version: ($schema_version | tonumber),
@@ -142,6 +171,7 @@ generate_manifest() {
             cron: $cron,
             security: $security,
             tls: $tls,
+            network: $network,
             packages: $packages[0]
         }'
 
