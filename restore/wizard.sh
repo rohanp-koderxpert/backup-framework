@@ -67,7 +67,10 @@ apply_ip_replacement() {
         sed -i "s/${old_ip//./\\.}/${new_ip}/g" "$file"
         while IFS= read -r line; do
             [[ -z "$line" ]] && continue
-            echo "$file: $line" >> "$log_file"
+            local line_no line_content
+            line_no="${line%%:*}"
+            line_content="${line#*:}"
+            echo "$file:$line_no  $old_ip -> $new_ip  (was: $line_content)" >> "$log_file"
         done <<< "$matched_lines"
     done
 }

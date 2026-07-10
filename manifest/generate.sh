@@ -106,8 +106,21 @@ collect_ports() {
 #
 # Outputs one "interface:ip" pair per line, skips loopback.
 detect_labeled_ips() {
+    # Excludes loopback and known virtual/bridge interface patterns
+    # (Docker, LXD/LXC, libvirt, container CNI plugins) - these are
+    # noise for IP-migration comparison purposes, since a container's
+    # internal address is essentially always different from a real
+    # server's regardless of whether actual hardware identity changed.
     ip -4 -o addr show 2>/dev/null | awk '
-        $2 != "lo" {
+        $2 != "lo" &&
+        $2 !~ /^docker/ &&
+        $2 !~ /^br-/ &&
+        $2 !~ /^veth/ &&
+        $2 !~ /^lxdbr/ &&
+        $2 !~ /^lxcbr/ &&
+        $2 !~ /^virbr/ &&
+        $2 !~ /^cni/ &&
+        $2 !~ /^flannel/ {
             split($4, a, "/")
             print $2 ":" a[1]
         }
