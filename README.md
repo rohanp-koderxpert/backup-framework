@@ -220,6 +220,17 @@ journalctl -u backup-framework.service -f
 
 ---
 
+## Connection Resilience
+
+Long first backups over unstable connections (a home Wi-Fi network, a laptop briefly sleeping, a VPN blip) are automatically retried — you don't need to babysit a running backup or manually restart it.
+
+- Up to **5 retry attempts**, with increasing wait time between each (10s, 20s, 40s...)
+- Covers both **abrupt** connection failures (broken pipe, connection reset) and **silent** ones, where the connection drops with no obvious error at all — detected via a stall-timeout watchdog that notices when no progress has been made for a while
+- Retries happen **within the same backup run** — no need to restart the systemd service or take any action yourself
+- If all retries are exhausted, the run fails and this is logged; the next scheduled run (or a manual `systemctl start backup-framework.service`) will simply try again from the start
+
+---
+
 ## Restore
 
 To restore from any available snapshot:
@@ -240,7 +251,21 @@ This will:
 
 ### Restoring to a different (new) server
 
-If you're restoring after total server loss — provisioning a fresh server and restoring onto it — be aware the framework currently restores **files as they were**, including any references to the original server's IP address (in application configs, Docker environment files, systemd units, etc.). If your new server has a different IP, you may need to manually update these references after restore. **Database-stored values** (e.g., Odoo's `ir.config_parameter` base URL) are not touched by filesystem restore at all and may need manual correction inside the application itself. Automatic IP migration is being considered as a future enhancement but is not currently implemented.
+If you're restoring after total server loss — provisioning a fresh server and restoring onto it — the restore wizard automatically detects when the new system's IP address(es) differ from what was recorded in the backup's manifest, and surfaces this as a question:
+
+```text
+Does this look like a restore onto different/new hardware? [y/N]:
+```
+
+**This is never assumed automatically.** An IP can legitimately change on the same physical server (DHCP lease renewal, a VPN reconnecting) without any hardware change at all — so the wizard always asks rather than guessing.
+
+If you confirm this is a migration, the wizard:
+1. Asks which old/new IP to use (sensible defaults are pre-filled)
+2. Scans the restored files and shows a **preview** of every match — grouped by file, with match counts — before touching anything
+3. Requires explicit confirmation of the full batch before applying any changes
+4. Writes a log of every change made (file, line, old value, new value) alongside the restore target for later review
+
+**Database-stored values** (e.g., Odoo's `ir.config_parameter` base URL) are **not** touched by this — it only updates plain-text filesystem configs (nginx/Apache vhosts, systemd units, Docker env files, app config files, etc.). Anything stored inside a database needs manual correction inside the application itself; the wizard reminds you of this at the end of a migration run.
 
 ### Post-restore validation only
 
@@ -266,6 +291,8 @@ validate_restore /path/to/original/manifest.json /path/to/current/manifest.json
 ├── core/config-loader.sh       # Safe config loading with validation
 ├── core/dispatcher.sh          # Decides wizard vs unattended run
 ├── core/lock.sh                # Concurrency guard
+├── core/retry.sh                # Backup retry/backoff + stall-detection watchdog
+├── core/progress.sh             # Live progress bar / throttled progress logging
 ├── manifest/generate.sh        # JSON manifest generator
 ├── database/postgresql.sh      # PostgreSQL dump with verification
 ├── destinations/local.sh       # Local disk adapter
@@ -299,6 +326,9 @@ The full annotated configuration template is at `templates/backup.conf.example`.
 | `DB_MODE` | `auto` | `auto`, `manual`, or `disabled` |
 | `VERIFY_BACKUP` | `true` | Run `restic check` after each backup |
 | `BACKUP_COMPRESSION` | `auto` | `auto`, `max`, or `off` |
+| `RESTIC_RETRY_MAX_ATTEMPTS` | `5` | Number of retry attempts on connection failure |
+| `RESTIC_RETRY_BASE_DELAY` | `10` (seconds) | Base delay before first retry; doubles each attempt |
+| `RESTIC_STALL_TIMEOUT_SECONDS` | `300` (5 min) | How long a backup can show no progress before being treated as stalled and retried |
 
 ---
 
@@ -307,7 +337,7 @@ The full annotated configuration template is at `templates/backup.conf.example`.
 - **Never commit** `/etc/backup-framework/` contents to git — it contains your encryption password and credentials
 - The repository password at `/etc/backup-framework/.restic-password` is the **only way to decrypt your backups** — store a copy somewhere safe off this server
 - The first backup to a remote destination (SFTP/rclone) transfers your full filesystem and may take 1-2 hours depending on connection speed — daily incremental backups after that are much smaller
-- SFTP backups over an unstable connection may require multiple retries to complete the initial full backup
+- SFTP backups over an unstable connection are automatically retried (see [Connection Resilience](#connection-resilience)) — you generally don't need to manually retry, though a persistently unreliable connection may still require investigating on the destination side
 
 ---
 
