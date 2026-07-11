@@ -227,10 +227,32 @@ main() {
     echo "=== Starting restore ==="
     mkdir -p "$target"
 
-    if ! restic restore "$snapshot_id" --target "$target"; then
-        echo "FATAL: restic restore failed" >&2
+    local restore_log
+    restore_log="$(mktemp)"
+    restic restore "$snapshot_id" --target "$target" 2>&1 | tee "$restore_log"
+    local restore_exit="${PIPESTATUS[0]}"
+
+    if [[ "$restore_exit" -ne 0 ]]; then
+        local progress_summary
+        progress_summary="$(grep -oE 'Restored [0-9]+ / [0-9]+ files/dirs \([^)]+\)' "$restore_log" | tail -n1)"
+        rm -f "$restore_log"
+
+        echo ""
+        echo "=== Restore FAILED ==="
+        echo "The restore operation did not complete successfully."
+        echo "Target directory: $target"
+        if [[ -n "$progress_summary" ]]; then
+            echo "Progress before failure: $progress_summary"
+        fi
+        echo "See the output above for restic's detailed error messages."
+        echo ""
+        echo "No validation was attempted, since the restore itself did not complete."
+        echo ""
+        echo "Common causes: insufficient permissions on the target directory, a"
+        echo "read-only filesystem, or insufficient disk space."
         exit 1
     fi
+    rm -f "$restore_log"
 
     echo ""
     echo "Restore complete: $snapshot_id -> $target"
