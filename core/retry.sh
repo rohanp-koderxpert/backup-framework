@@ -97,6 +97,20 @@ run_restic_backup_with_retry() {
             return 0
         fi
 
+        # restic exit code 3: backup completed and a snapshot was saved,
+        # but some source files could not be read (e.g. unreadable kernel
+        # namespace handles from LXD/Docker internals). This is genuinely
+        # different from a true fatal error - the backup is still usable
+        # and should proceed to verification/retention, not be discarded.
+        if (( restic_exit == 3 )) && ! $stalled; then
+            echo "WARNING: backup completed but one or more source files could not be read (restic exit 3)." >&2
+            echo "A snapshot was still saved with everything that could be read. Review the errors above -" >&2
+            echo "if these are known virtual/special files (container runtime internals, etc.), consider adding" >&2
+            echo "them to your exclude file. If these are real files you expected to be readable, investigate." >&2
+            rm -f "$json_log" "$stderr_log"
+            return 0
+        fi
+
         local retryable=false
         if $stalled; then
             retryable=true

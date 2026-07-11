@@ -121,21 +121,7 @@ create_directories() {
     chmod 755 "$LOG_DIR"
 
     if [[ ! -f "$CONFIG_DIR/excludes.txt" ]]; then
-        cat > "$CONFIG_DIR/excludes.txt" << 'EOF'
-/proc
-/sys
-/dev
-/run
-/tmp
-/var/tmp
-/mnt
-/media
-/lost+found
-/swapfile
-/var/backups/backup-framework/repo
-/var/lib/docker/overlay2
-/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
-EOF
+        cp "$FRAMEWORK_DIR/templates/default-excludes.txt" "$CONFIG_DIR/excludes.txt"
         log_info "Default exclude file created at $CONFIG_DIR/excludes.txt"
     else
         log_info "Exclude file already exists, leaving it untouched."

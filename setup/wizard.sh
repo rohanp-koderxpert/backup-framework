@@ -259,21 +259,7 @@ write_config() {
     echo "Config written to $CONFIG_PATH"
 
     if [[ ! -f "/etc/backup-framework/excludes.txt" ]]; then
-        cat > /etc/backup-framework/excludes.txt << 'EOF'
-/proc
-/sys
-/dev
-/run
-/tmp
-/var/tmp
-/mnt
-/media
-/lost+found
-/swapfile
-/var/backups/backup-framework/repo
-/var/lib/docker/overlay2
-/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
-EOF
+        cp "$FRAMEWORK_ROOT/templates/default-excludes.txt" /etc/backup-framework/excludes.txt
         echo "Default exclude file written to /etc/backup-framework/excludes.txt"
     else
         echo "Exclude file already exists, leaving it untouched."

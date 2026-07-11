@@ -1,0 +1,14 @@
+/proc
+/sys
+/dev
+/run
+/tmp
+/var/tmp
+/mnt
+/media
+/lost+found
+/swapfile
+/var/backups/backup-framework/repo
+/var/lib/docker/overlay2
+/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+/var/snap/lxd/common/ns
