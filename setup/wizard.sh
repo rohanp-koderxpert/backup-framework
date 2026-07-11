@@ -283,8 +283,11 @@ test_connectivity() {
         local)
             source "$FRAMEWORK_ROOT/destinations/local.sh"
             ;;
-	sftp)
+        sftp)
             source "$FRAMEWORK_ROOT/destinations/sftp.sh"
+            ;;
+        rclone)
+            source "$FRAMEWORK_ROOT/destinations/rclone.sh"
             ;;
         *)
             echo "FATAL: destination type '$DEST_TYPE' is not yet implemented" >&2
