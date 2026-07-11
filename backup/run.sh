@@ -17,6 +17,7 @@ source "$FRAMEWORK_ROOT/manifest/generate.sh"
 source "$FRAMEWORK_ROOT/database/postgresql.sh"
 source "$FRAMEWORK_ROOT/core/progress.sh"
 source "$FRAMEWORK_ROOT/core/retry.sh"
+source "$FRAMEWORK_ROOT/core/repo-lock.sh"
 
 cleanup() {
     release_lock
@@ -26,6 +27,8 @@ trap cleanup EXIT
 main() {
     local config_path="${1:-/etc/backup-framework/backup.conf}"
     local db_dump_failed=0
+    local verify_failed=0
+    local retention_failed=0
 
     echo "=== Backup run starting ==="
 
@@ -99,10 +102,19 @@ main() {
         exit 1
     fi
 
+    # A backup killed mid-write (e.g. systemctl stop) can leave restic's own
+    # repository lock behind even though our application-level lock released
+    # cleanly - this would otherwise silently block verification/retention
+    # below. Only clears a lock confirmed to belong to this host with a
+    # confirmed-dead PID; never touches a lock that might belong to another
+    # server sharing this repository.
+    clear_stale_repo_locks
+
     if [[ "$VERIFY_BACKUP" == "true" ]]; then
         echo "Verifying repository structure..."
         if ! restic check; then
             echo "WARNING: repository structural check failed after backup" >&2
+            verify_failed=1
         fi
     fi
 
@@ -110,12 +122,19 @@ main() {
         echo "Applying retention policy: keep last $RETENTION_DAILY daily snapshots..."
         if ! restic forget --keep-daily "$RETENTION_DAILY" --prune; then
             echo "WARNING: retention/prune step failed" >&2
+            retention_failed=1
         fi
     else
         echo "Retention disabled by config, skipping cleanup."
     fi
 
-    echo "=== Backup run complete (db_dump_failed=$db_dump_failed) ==="
+    if [[ "$verify_failed" -eq 1 || "$retention_failed" -eq 1 ]]; then
+        echo "=== Backup run complete WITH WARNINGS (db_dump_failed=$db_dump_failed, verify_failed=$verify_failed, retention_failed=$retention_failed) ==="
+        echo "The backup itself succeeded, but one or more post-backup safety steps did not complete."
+        echo "Review the WARNING lines above - this needs attention, not just the overall success message."
+    else
+        echo "=== Backup run complete (db_dump_failed=$db_dump_failed) ==="
+    fi
 }
 
 main "$@"
