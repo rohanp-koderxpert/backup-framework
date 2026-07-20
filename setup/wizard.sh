@@ -194,6 +194,10 @@ generate_repository_password() {
         read -rp "Overwrite it with a newly generated password? This makes any existing backup using it unreadable unless you already have a copy saved elsewhere. [y/N]: " confirm
         if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
             echo "Keeping existing password file."
+            cat > "$secrets_file" << EOF
+RESTIC_PASSWORD_FILE="$password_file"
+EOF
+            chmod 600 "$secrets_file"
             return 0
         fi
     fi
