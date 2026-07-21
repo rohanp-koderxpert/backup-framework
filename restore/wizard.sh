@@ -227,35 +227,45 @@ main() {
     echo "=== Starting restore ==="
     mkdir -p "$target"
 
-    local restore_log
-    restore_log="$(mktemp)"
-    restic restore "$snapshot_id" --target "$target" 2>&1 | tee "$restore_log"
+    source "$FRAMEWORK_ROOT/core/progress.sh"
+
+    local stderr_log state_file
+    stderr_log="$(mktemp)"
+    state_file="$(mktemp)"
+
+    restic restore "$snapshot_id" --target "$target" --overwrite if-changed --json \
+        2>"$stderr_log" | render_restore_progress "$state_file"
     local restore_exit="${PIPESTATUS[0]}"
 
     if [[ "$restore_exit" -ne 0 ]]; then
-        local progress_summary
-        progress_summary="$(grep -oE 'Restored [0-9]+ / [0-9]+ files/dirs \([^)]+\)' "$restore_log" | tail -n1)"
-        rm -f "$restore_log"
+        local files_restored total_files
+        files_restored="$(jq -r '.files_restored // "?"' "$state_file" 2>/dev/null)"
+        total_files="$(jq -r '.total_files // "?"' "$state_file" 2>/dev/null)"
 
         echo ""
-        echo "=== Restore FAILED ==="
-        echo "The restore operation did not complete successfully."
-        echo "Target directory: $target"
-        if [[ -n "$progress_summary" ]]; then
-            echo "Progress before failure: $progress_summary"
-        fi
-        echo "See the output above for restic's detailed error messages."
-        echo ""
-        echo "No validation was attempted, since the restore itself did not complete."
-        echo ""
-        echo "Common causes: insufficient permissions on the target directory, a"
-        echo "read-only filesystem, or insufficient disk space."
+        echo "=== Restore FAILED ===" >&2
+        echo "The restore operation did not complete successfully." >&2
+        echo "Target directory: $target" >&2
+        echo "Progress before failure: $files_restored / $total_files files" >&2
+        echo "" >&2
+        cat "$stderr_log" >&2
+        echo "" >&2
+        echo "No validation was attempted, since the restore itself did not complete." >&2
+        echo "" >&2
+        echo "Common causes: insufficient permissions on the target directory, a" >&2
+        echo "read-only filesystem, or insufficient disk space." >&2
+        rm -f "$stderr_log" "$state_file"
         exit 1
     fi
-    rm -f "$restore_log"
+    cat "$stderr_log" >&2
+    rm -f "$stderr_log" "$state_file"
 
     echo ""
     echo "Restore complete: $snapshot_id -> $target"
+    echo ""
+    echo "To deploy this onto the live system, review the restored files at"
+    echo "$target first, then run:"
+    echo "  sudo bash $FRAMEWORK_ROOT/restore/deploy.sh $target"
 
     echo ""
     echo "=== Running restore validation ==="

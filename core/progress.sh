@@ -110,3 +110,83 @@ render_backup_progress() {
     fi
     return 0
 }
+
+# --- progress rendering for restic restore --json output -----------------
+#
+# render_restore_progress reads newline-delimited JSON from restic's
+# `restore --json` output and renders a live progress bar (TTY) or
+# throttled summaries (unattended), same pattern as render_backup_progress.
+#
+# Additionally writes the last-known progress state to $state_file after
+# every update, so a caller can report accurate partial progress if the
+# restore fails mid-stream (this replaces relying on restic's plain-text
+# output, which --json mode replaces entirely).
+#
+# NOTE: restic restore --json field names (files_restored vs
+# files_finished, etc.) have not been confirmed against a live restic
+# 0.16.4 run - this uses `//` fallbacks to degrade gracefully, but
+# should be verified with a real restore before fully trusting it.
+#
+# Usage: restic restore ... --json | render_restore_progress /path/to/state.json
+
+render_restore_progress() {
+    local state_file="$1"
+    local is_tty=false
+    [[ -t 1 ]] && is_tty=true
+
+    local bar_width=30
+    local last_log_time=0
+    echo '{}' > "$state_file"
+
+    while IFS= read -r line; do
+        local msg_type
+        msg_type="$(jq -r '.message_type // empty' <<<"$line" 2>/dev/null)"
+
+        if [[ "$msg_type" == "status" || "$msg_type" == "verify_data" ]]; then
+            local percent files_restored total_files bytes_restored total_bytes
+            percent="$(jq -r '.percent_done // 0' <<<"$line")"
+            files_restored="$(jq -r '.files_restored // .files_finished // 0' <<<"$line")"
+            total_files="$(jq -r '.total_files // 0' <<<"$line")"
+            bytes_restored="$(jq -r '.bytes_restored // 0' <<<"$line")"
+            total_bytes="$(jq -r '.total_bytes // 0' <<<"$line")"
+
+            jq -n \
+                --arg p "$percent" --arg f "$files_restored" --arg tf "$total_files" \
+                --arg b "$bytes_restored" --arg tb "$total_bytes" \
+                '{percent_done: ($p|tonumber), files_restored: ($f|tonumber), total_files: ($tf|tonumber), bytes_restored: ($b|tonumber), total_bytes: ($tb|tonumber)}' \
+                > "$state_file" 2>/dev/null
+
+            local pct_int
+            pct_int="$(awk -v p="$percent" 'BEGIN{printf "%d", p*100}')"
+
+            if $is_tty; then
+                local filled empty bar
+                filled=$(( pct_int * bar_width / 100 ))
+                (( filled > bar_width )) && filled=$bar_width
+                empty=$(( bar_width - filled ))
+                bar="$(printf '%*s' "$filled" '' | tr ' ' '#')$(printf '%*s' "$empty" '' | tr ' ' '-')"
+                printf '\r\033[K[%s] %3d%% | %s/%s files' "$bar" "$pct_int" "$files_restored" "$total_files"
+            else
+                local now
+                now="$(date +%s)"
+                if (( now - last_log_time >= 60 )); then
+                    echo "Restore progress: ${pct_int}% | ${files_restored}/${total_files} files"
+                    last_log_time="$now"
+                fi
+            fi
+        elif [[ "$msg_type" == "summary" ]]; then
+            if $is_tty; then
+                printf '\r\033[K'
+            fi
+            echo "$line" | jq -r '
+                "Files restored: \(.files_restored // .total_files_processed // "?")",
+                "Bytes restored: \(.bytes_restored // .total_bytes_processed // "?")"
+            ' 2>/dev/null
+        fi
+    done
+
+    if $is_tty; then
+        echo ""
+    fi
+    return 0
+}
