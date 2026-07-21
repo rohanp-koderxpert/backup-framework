@@ -233,7 +233,7 @@ main() {
     stderr_log="$(mktemp)"
     state_file="$(mktemp)"
 
-    restic restore "$snapshot_id" --target "$target" --overwrite if-changed --json \
+    restic restore "$snapshot_id" --target "$target" --json \
         2>"$stderr_log" | render_restore_progress "$state_file"
     local restore_exit="${PIPESTATUS[0]}"
 
