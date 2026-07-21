@@ -41,6 +41,7 @@ SAFETY_EXCLUDES=(
     "/etc/resolv.conf"
     "/var/lib/dbus/machine-id"
     "/var/lib/cloud"
+    "/boot"
 )
 
 build_rsync_excludes() {

@@ -27,3 +27,4 @@
 /etc/resolv.conf
 /var/lib/dbus/machine-id
 /var/lib/cloud
+/boot
